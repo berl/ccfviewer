@@ -110,6 +110,8 @@ class AtlasViewer(QtGui.QWidget):
                 self.view.setOverlay(value)
             elif param.name() == 'Opacity':
                 self.view.setLabelOpacity(value)
+            elif param.name() == 'Interpolate':
+                self.view.setInterpolation(value)
             else:
                 update = True
         if update:
@@ -387,6 +389,7 @@ class LabelDisplayCtrl(pg.parametertree.ParameterTree):
             {'name': 'Opacity', 'type': 'float', 'limits': [0, 1], 'value': 0.5, 'step': 0.1},
             {'name': 'Composition', 'type': 'list', 'values': ['Multiply', 'Overlay', 'SourceOver']},
             {'name': 'Downsample', 'type': 'int', 'value': 1, 'limits': [1, None], 'step': 1},
+            {'name': 'Interpolate', 'type': 'bool', 'value': True},
         ]
         self.params = pg.parametertree.Parameter(name='params', type='group', children=params)
         self.setParameters(self.params, showTop=False)
@@ -526,6 +529,7 @@ class VolumeSliceView(QtGui.QWidget):
     def __init__(self, parent=None):
         self.atlas = None
         self.label = None
+        self.interpolate = True
 
         QtGui.QWidget.__init__(self, parent)
         self.scale = None
@@ -641,10 +645,10 @@ class VolumeSliceView(QtGui.QWidget):
             return
 
         if rotation == 0:
-            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, axes=(1, 2))
+            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, axes=(1, 2), order=int(self.interpolate))
             label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, axes=(1, 2), order=0)
         else:
-            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0))
+            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=int(self.interpolate))
             label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=0)
 
         if atlas.size == 0:
@@ -727,6 +731,10 @@ class VolumeSliceView(QtGui.QWidget):
     def setLabelOpacity(self, o):
         self.img1.setLabelOpacity(o)
         self.img2.setLabelOpacity(o)
+
+    def setInterpolation(self, interp):
+        assert isinstance(interp, bool)
+        self.interpolate = interp
 
 
 class LabelImageItem(QtGui.QGraphicsItemGroup):
