@@ -12,11 +12,7 @@ from pyqtgraph.Qt import QtGui, QtCore
 import math
 import points_to_aff
 
-
-class AtlasBuilder(QtGui.QMainWindow):
-    def __init__(self):
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
+from aiccf.data import CCFAtlasData
 
 
 class AtlasViewer(QtGui.QWidget):
@@ -62,6 +58,11 @@ class AtlasViewer(QtGui.QWidget):
         self.coordinateCtrl = CoordinatesCtrl(self)
         self.coordinateCtrl.coordinateSubmitted.connect(self.coordinateSubmitted)
         self.ctrlLayout.addWidget(self.coordinateCtrl)
+
+    def set_data(self, atlas_data):
+        self.atlas_data = atlas_data
+        self.setAtlas(atlas_data.image)
+        self.setLabels(atlas_data.label)
 
     def setLabels(self, label):
         self.label = label
@@ -994,156 +995,10 @@ class Target(pg.GraphicsObject):
         p.drawEllipse(r)
         p.drawLine(pg.Point(-w*2, 0), pg.Point(w*2, 0))
         p.drawLine(pg.Point(0, -h*2), pg.Point(0, h*2))
-        
-
-def readNRRDAtlas(nrrdFile=None):
-    """
-    Download atlas files from:
-      http://help.brain-map.org/display/mouseconnectivity/API#API-DownloadAtlas
-    """
-    import nrrd
-    if nrrdFile is None:
-        displayMessage('Please Select NRRD Atlas File')
-        nrrdFile = QtGui.QFileDialog.getOpenFileName(None, "Select NRRD atlas file")
-
-    with pg.BusyCursor():
-        data, header = nrrd.read(nrrdFile)
-
-    # convert to ubyte to compress a bit
-    np.multiply(data, 255./data.max(), out=data, casting='unsafe')
-    data = data.astype('ubyte')
-
-    # data must have axes (anterior, dorsal, right)
-    # rearrange axes to fit -- CCF data comes in (posterior, inferior, right) order.
-    data = data[::-1, ::-1, :]
-
-    # voxel size in um
-    vxsize = 1e-6 * float(header['space directions'][0][0])
-
-    info = [
-        {'name': 'anterior', 'values': np.arange(data.shape[0]) * vxsize, 'units': 'm'},
-        {'name': 'dorsal', 'values': np.arange(data.shape[1]) * vxsize, 'units': 'm'},
-        {'name': 'right', 'values': np.arange(data.shape[2]) * vxsize, 'units': 'm'},
-        {'vxsize': vxsize}
-    ]
-    ma = metaarray.MetaArray(data, info=info)
-    return ma
 
 
-def readNRRDLabels(nrrdFile=None, ontologyFile=None):
-    """
-    Download label files from:
-      http://help.brain-map.org/display/mouseconnectivity/API#API-DownloadAtlas
-
-    Download ontology files from:
-      http://api.brain-map.org/api/v2/structure_graph_download/1.json
-
-      see:
-      http://help.brain-map.org/display/api/Downloading+an+Ontology%27s+Structure+Graph
-      http://help.brain-map.org/display/api/Atlas+Drawings+and+Ontologies#AtlasDrawingsandOntologies-StructuresAndOntologies
-
-    This method compresses the annotation data down to a 16-bit array by remapping
-    the larger annotations to smaller, unused values.
-    """
-    global onto, ontology, data, mapping, inds, vxsize, info, ma
-
-    import nrrd
-    if nrrdFile is None:
-        displayMessage('Select NRRD annotation file')
-        nrrdFile = QtGui.QFileDialog.getOpenFileName(None, "Select NRRD annotation file")
-
-    if ontologyFile is None:
-        displayMessage('Select ontology file (json)')
-        ontoFile = QtGui.QFileDialog.getOpenFileName(None, "Select ontology file (json)")
-
-    with pg.ProgressDialog("Loading annotation file...", 0, 5, wait=0) as dlg:
-        print "Loading annotation file..."
-        app.processEvents()
-        # Read ontology and convert to flat table
-        onto = json.load(open(ontoFile, 'rb'))
-        onto = parseOntology(onto['msg'][0])
-        l1 = max([len(row[2]) for row in onto])
-        l2 = max([len(row[3]) for row in onto])
-        ontology = np.array(onto, dtype=[('id', 'int32'), ('parent', 'int32'), ('name', 'S%d'%l1), ('acronym', 'S%d'%l2), ('color', 'S6')])    
-
-        if dlg.wasCanceled():
-            return
-        dlg += 1
-
-        # read annotation data
-        data, header = nrrd.read(nrrdFile)
-
-        if dlg.wasCanceled():
-            return
-        dlg += 1
-
-        # data must have axes (anterior, dorsal, right)
-        # rearrange axes to fit -- CCF data comes in (posterior, inferior, right) order.
-        data = data[::-1, ::-1, :]
-
-        if dlg.wasCanceled():
-            return
-        dlg += 1
-
-    # compress down to uint16
-    print "Compressing.."
-    u = np.unique(data)
     
-    # decide on a 32-to-64-bit label mapping
-    mask = u <= 2**16-1
-    next_id = 2**16-1
-    mapping = OrderedDict()
-    inds = set()
-    for i in u[mask]:
-        mapping[i] = i
-        inds.add(i)
-   
-    with pg.ProgressDialog("Remapping annotations to 16-bit...", 0, (~mask).sum(), wait=0) as dlg:
-        app.processEvents()
-        for i in u[~mask]:
-            while next_id in inds:
-                next_id -= 1
-            mapping[i] = next_id
-            inds.add(next_id)
-            data[data == i] = next_id
-            ontology['id'][ontology['id'] == i] = next_id
-            ontology['parent'][ontology['parent'] == i] = next_id
-            if dlg.wasCanceled():
-                return
-            dlg += 1
-        
-    data = data.astype('uint16')
-    mapping = np.array(list(mapping.items()))    
- 
-    # voxel size in um
-    vxsize = 1e-6 * float(header['space directions'][0][0])
 
-    info = [
-        {'name': 'anterior', 'values': np.arange(data.shape[0]) * vxsize, 'units': 'm'},
-        {'name': 'dorsal', 'values': np.arange(data.shape[1]) * vxsize, 'units': 'm'},
-        {'name': 'right', 'values': np.arange(data.shape[2]) * vxsize, 'units': 'm'},
-        {'vxsize': vxsize, 'ai_ontology_map': mapping, 'ontology': ontology}
-    ]
-    ma = metaarray.MetaArray(data, info=info)
-    return ma
-
-
-def parseOntology(root, parent=-1):
-    ont = [(root['id'], parent, root['name'], root['acronym'], root['color_hex_triplet'])]
-    for child in root['children']:
-        ont += parseOntology(child, root['id'])
-    return ont
-
-
-def writeFile(data, file):
-    dataDir = os.path.dirname(file)
-    if dataDir != '' and not os.path.exists(dataDir):
-        os.makedirs(dataDir)
-
-    if max(data.shape) > 200 and min(data.shape) > 200:
-        data.write(file, chunks=(200, 200, 200))
-    else:
-        data.write(file)
 
 
 def displayError(error):
@@ -1207,49 +1062,24 @@ if __name__ == '__main__':
     v.setWindowTitle('CCF Viewer')
     v.show()
 
-    path = os.path.dirname(os.path.realpath(__file__))
-    atlasFile = os.path.join(path, "ccf.ma")
-    labelFile = os.path.join(path, "ccf_label.ma")
+    atlas_data = CCFAtlasData(image_cache_file='ccf.ma', label_cache_file='ccf_label.ma')
+    
+    if atlas_data.image is None:
+        # nothing loaded from cache
+        displayMessage('Please Select NRRD Atlas File')
+        nrrd_file = QtGui.QFileDialog.getOpenFileName(None, "Select NRRD atlas file")
+        with pg.BusyCursor():
+            atlas_data.load_image_file(nrrd_file)
+        
+        displayMessage('Select NRRD annotation file')
+        nrrd_file = QtGui.QFileDialog.getOpenFileName(None, "Select NRRD annotation file")
 
-    if os.path.isfile(atlasFile):
-        atlas = metaarray.MetaArray(file=atlasFile, readAllData=True)
-    else:
-        try:
-            atlas = readNRRDAtlas()
-            writeFile(atlas, atlasFile)
-        except:
-            print "Unexpected error when creating ccf.ma file with " + atlasFile
-            if os.path.isfile(atlasFile):
-                try:
-                    print "Removing ccf.ma"
-                    os.remove(atlasFile)
-                except:
-                    print "Error removing ccf.ma:"
-                    sys.excepthook(*sys.exc_info())
-            raise   
-
-    if os.path.isfile(labelFile):
-        label = metaarray.MetaArray(file=labelFile, readAllData=True)
-    else:
-        try:
-            label = readNRRDLabels()
-            writeFile(label, labelFile)
-        except:     
-            print "Unexpected error when creating ccf_label.ma file with " + labelFile
-            if os.path.isfile(labelFile):
-                try:
-                    print "Removing ccf.ma and ccf_label.ma files..."
-                    if os.path.isfile(atlasFile):
-                        os.remove(atlasFile)
-                    if os.path.isfile(labelFile):
-                        os.remove(labelFile)
-                except:
-                    print "Error removing ccf.ma and ccf_label.ma:"
-                    sys.excepthook(*sys.exc_info())
-            raise 
-
-    v.setAtlas(atlas)
-    v.setLabels(label)
+        displayMessage('Select ontology file (json)')
+        onto_file = QtGui.QFileDialog.getOpenFileName(None, "Select ontology file (json)")
+        
+        atlas_data.load_label_file(nrrd_file, onto_file)
+    
+    v.set_data(atlas_data)
 
     if sys.flags.interactive == 0:
         app.exec_()
