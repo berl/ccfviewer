@@ -50,39 +50,99 @@ class AtlasSliceView(QtCore.QObject):
         self.lut.sigLookupTableChanged.connect(self.histlutChanged)
         self.lut.sigLevelsChanged.connect(self.histlutChanged)
 
-    def set_data(self, atlas, label, scale=None):
-        if np.isscalar(scale):
-            scale = (scale, scale)
-        self.atlas = atlas
-        self.label = label
-        if self.scale != scale:
-            self.scale = scale
+        self.displayCtrl = AtlasDisplayCtrl()
+        self.displayCtrl.params.sigTreeStateChanged.connect(self.displayCtrlChanged)
 
-        self.zslider.setMaximum(atlas.shape[0])
-        self.zslider.setValue(atlas.shape[0] // 2)
+        self.labelTree = LabelTree()
+        self.labelTree.labelsChanged.connect(self.labelsChanged)
+
+    def set_data1(self, atlas_data):
+        self.atlas_data = atlas_data
+        self.atlas = None
+        self.label = None
+        self.display_atlas = None
+        self.display_label = None
+        self.setAtlas(atlas_data.image)
+        self.setLabels(atlas_data.label, atlas_data.ontology)
+
+    def setLabels(self, label, ontology):
+        self.label = label
+        self.ontology = ontology
+        self.labelTree.set_ontology(ontology)
+        self.updateImage1()
+        self.labelsChanged()
+
+    def setAtlas(self, atlas):
+        self.atlas = atlas
+        self.updateImage1()
+
+    def updateImage1(self):
+        if self.atlas is None or self.label is None:
+            return
+        axis = self.displayCtrl.params['Orientation']
+        axes = {
+            'right': ('right', 'anterior', 'dorsal'),
+            'dorsal': ('dorsal', 'right', 'anterior'),
+            'anterior': ('anterior', 'right', 'dorsal')
+        }[axis]
+        order = [self.atlas._interpretAxis(ax) for ax in axes]
+
+        # transpose, flip, downsample images
+        ds = self.displayCtrl.params['Downsample']
+        self.display_atlas = self.atlas.view(np.ndarray).transpose(order)
+        with pg.BusyCursor():
+            for ax in (0, 1, 2):
+                self.display_atlas = pg.downsample(self.display_atlas, ds, axis=ax)
+        self.display_label = self.label.view(np.ndarray).transpose(order)[::ds, ::ds, ::ds]
+
+        # make sure atlas/label have the same size after downsampling
+
+        scale = self.atlas._info[-1]['vxsize']*ds
+        self.scale = (scale, scale)
+
+        self.zslider.setMaximum(self.display_atlas.shape[0])
+        self.zslider.setValue(self.display_atlas.shape[0] // 2)
         self.slider.setRange(-45, 45)
         self.slider.setValue(0)
         self.updateImage()
         self.updateSlice()
-        self.lut.setLevels(atlas.min(), atlas.max())
+        self.lut.setLevels(self.display_atlas.min(), self.display_atlas.max())
+
+    def labelsChanged(self):
+        lut = self.labelTree.lookupTable()
+        self.setLabelLUT(lut)        
+        
+    def displayCtrlChanged(self, param, changes):
+        update = False
+        for param, change, value in changes:
+            if param.name() == 'Composition':
+                self.setOverlay(value)
+            elif param.name() == 'Opacity':
+                self.setLabelOpacity(value)
+            elif param.name() == 'Interpolate':
+                self.setInterpolation(value)
+            else:
+                update = True
+        if update:
+            self.updateImage1()
 
     def updateImage(self):
         z = self.zslider.value()
-        self.img1.setData(self.atlas[z], self.label[z], scale=self.scale)
+        self.img1.setData(self.display_atlas[z], self.display_label[z], scale=self.scale)
         self.sig_image_changed.emit()
 
     def updateSlice(self):
         rotation = self.slider.value()
 
-        if self.atlas is None:
+        if self.display_atlas is None:
             return
 
         if rotation == 0:
-            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, axes=(1, 2), order=int(self.interpolate))
-            label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, axes=(1, 2), order=0)
+            atlas = self.line_roi.getArrayRegion(self.display_atlas, self.img1.atlasImg, axes=(1, 2), order=int(self.interpolate))
+            label = self.line_roi.getArrayRegion(self.display_label, self.img1.atlasImg, axes=(1, 2), order=0)
         else:
-            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=int(self.interpolate))
-            label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=0)
+            atlas = self.line_roi.getArrayRegion(self.display_atlas, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=int(self.interpolate))
+            label = self.line_roi.getArrayRegion(self.display_label, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=0)
 
         if atlas.size == 0:
             return

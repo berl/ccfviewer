@@ -29,6 +29,10 @@ class CCFAtlasData(object):
         if os.path.exists(label_cache_file):
             self.load_label_cache()
 
+    @property
+    def shape(self):
+        return self.image.shape
+
     def load_image_data(self, filename):
         self.image = read_nrrd_atlas(filename)
         writeFile(self.image, self._image_cache_file)

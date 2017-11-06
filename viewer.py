@@ -90,77 +90,20 @@ class AtlasViewer(QtGui.QWidget):
         self.ctrlLayout = QtGui.QVBoxLayout()
         self.ctrl.setLayout(self.ctrlLayout)
 
-        self.displayCtrl = AtlasDisplayCtrl(parent=self)
-        self.ctrlLayout.addWidget(self.displayCtrl)
-        self.displayCtrl.params.sigTreeStateChanged.connect(self.displayCtrlChanged)
-
-        self.labelTree = LabelTree(self)
-        self.labelTree.labelsChanged.connect(self.labelsChanged)
-        self.ctrlLayout.addWidget(self.labelTree)
+        self.ctrlLayout.addWidget(self.atlas_view.displayCtrl)
+        self.ctrlLayout.addWidget(self.atlas_view.labelTree)
         
         self.coordinateCtrl = CoordinatesCtrl(self)
         self.coordinateCtrl.coordinateSubmitted.connect(self.coordinateSubmitted)
         self.ctrlLayout.addWidget(self.coordinateCtrl)
 
     def set_data(self, atlas_data):
-        self.atlas_data = atlas_data
-        self.setAtlas(atlas_data.image)
-        self.setLabels(atlas_data.label, atlas_data.ontology)
-
-    def setLabels(self, label, ontology):
-        self.label = label
-        self.labelTree.set_ontology(ontology)
-        self.updateImage()
-        self.labelsChanged()
-
-    def setAtlas(self, atlas):
-        self.atlas = atlas
-        self.coordinateCtrl.atlas_shape = atlas.shape
-        self.updateImage()
-
-    def updateImage(self):
-        if self.atlas is None or self.label is None:
-            return
-        axis = self.displayCtrl.params['Orientation']
-        axes = {
-            'right': ('right', 'anterior', 'dorsal'),
-            'dorsal': ('dorsal', 'right', 'anterior'),
-            'anterior': ('anterior', 'right', 'dorsal')
-        }[axis]
-        order = [self.atlas._interpretAxis(ax) for ax in axes]
-
-        # transpose, flip, downsample images
-        ds = self.displayCtrl.params['Downsample']
-        self.displayAtlas = self.atlas.view(np.ndarray).transpose(order)
-        with pg.BusyCursor():
-            for ax in (0, 1, 2):
-                self.displayAtlas = pg.downsample(self.displayAtlas, ds, axis=ax)
-        self.displayLabel = self.label.view(np.ndarray).transpose(order)[::ds, ::ds, ::ds]
-
-        # make sure atlas/label have the same size after downsampling
-
-        self.setData(self.displayAtlas, self.displayLabel, scale=self.atlas._info[-1]['vxsize']*ds)
-
-    def labelsChanged(self):
-        lut = self.labelTree.lookupTable()
-        self.atlas_view.setLabelLUT(lut)        
+        self.atlas_view.set_data1(atlas_data)
+        self.view1.autoRange(items=[self.img1.atlasImg])
+        self.coordinateCtrl.atlas_shape = atlas_data.shape
         
-    def displayCtrlChanged(self, param, changes):
-        update = False
-        for param, change, value in changes:
-            if param.name() == 'Composition':
-                self.atlas_view.setOverlay(value)
-            elif param.name() == 'Opacity':
-                self.atlas_view.setLabelOpacity(value)
-            elif param.name() == 'Interpolate':
-                self.atlas_view.setInterpolation(value)
-            else:
-                update = True
-        if update:
-            self.updateImage()
-
     def mouseHovered(self, id):
-        self.statusLabel.setText(self.labelTree.describe(id))
+        self.statusLabel.setText(self.atlas_view.labelTree.describe(id))
         
     def renderVolume(self):
         import pyqtgraph.opengl as pgl
@@ -383,17 +326,13 @@ class AtlasViewer(QtGui.QWidget):
         # print self.line_roi.pos()
         self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() - .0001, self.atlas_view.line_roi.pos().y()))
 
-    def setData(self, image, label, scale=None):
-        self.atlas_view.set_data(image, label, scale)
-        self.view1.autoRange(items=[self.img1.atlasImg])
-
     def sliceChanged(self):
         self.view2.autoRange(items=[self.img2.atlasImg])
         self.target.setVisible(False)
     
     def closeEvent(self, ev):
-        self.imv1.close()
-        self.imv2.close()
+        self.view1.close()
+        self.view2.close()
         self.atlas_view.close()
 
     
