@@ -62,13 +62,11 @@ class AtlasViewer(QtGui.QWidget):
     def set_data(self, atlas_data):
         self.atlas_data = atlas_data
         self.setAtlas(atlas_data.image)
-        self.setLabels(atlas_data.label)
+        self.setLabels(atlas_data.label, atlas_data.ontology)
 
-    def setLabels(self, label):
+    def setLabels(self, label, ontology):
         self.label = label
-        with SignalBlock(self.labelTree.labelsChanged, self.labelsChanged):
-            for rec in label._info[-1]['ontology']:
-                self.labelTree.addLabel(*rec)
+        self.labelTree.set_ontology(ontology)
         self.updateImage()
         self.labelsChanged()
 
@@ -401,6 +399,7 @@ class LabelTree(QtGui.QWidget):
     labelsChanged = QtCore.Signal()
 
     def __init__(self, parent=None):
+        self._block_signals = False
         QtGui.QWidget.__init__(self, parent)
         self.layout = QtGui.QGridLayout()
         self.setLayout(self.layout)
@@ -425,6 +424,17 @@ class LabelTree(QtGui.QWidget):
         self.resetBtn = QtGui.QPushButton('Reset colors')
         self.layout.addWidget(self.resetBtn, 2, 0)
         self.resetBtn.clicked.connect(self.resetColors)
+
+    def set_ontology(self, ontology):
+        # prevent emission of multiple signals during update
+        self._block_signals = True
+        try:
+            for rec in ontology:
+                self.addLabel(*rec)
+        finally:
+            self._block_signals = False
+        
+        self.labelsChanged.emit()
 
     def addLabel(self, id, parent, name, acronym, color):
         item = QtGui.QTreeWidgetItem([acronym, name, ''])
@@ -453,7 +463,9 @@ class LabelTree(QtGui.QWidget):
         checked = item.checkState(0) == QtCore.Qt.Checked
         with SignalBlock(self.tree.itemChanged, self.itemChange):
             self.checkRecursive(item, checked)
-        self.labelsChanged.emit()
+            
+        if not self._block_signals:
+            self.labelsChanged.emit()
 
     def checkRecursive(self, item, checked):
         if checked:
