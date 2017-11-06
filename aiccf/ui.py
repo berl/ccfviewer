@@ -90,6 +90,12 @@ class AtlasSliceView(QtCore.QObject):
         self.img2.setData(atlas, label, scale=self.scale)
         self.sig_slice_changed.emit()
         
+        w = self.img2.atlasImg.scene().views()
+        if len(w) > 0:
+            # repaint immediately to avoid processing more mouse events before next repaint
+            w[0].viewport().repaint()
+            #w[0].viewport().repaint()
+        
     def sliderRotation(self):
         rotation = self.slider.value()
         self.set_rotation_roi(self.img1.atlasImg, rotation)

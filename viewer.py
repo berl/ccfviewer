@@ -29,10 +29,53 @@ class AtlasViewer(QtGui.QWidget):
         self.splitter = QtGui.QSplitter()
         self.layout.addWidget(self.splitter, 0, 0)
 
-        self.view = VolumeSliceView()
-        self.view.mouseHovered.connect(self.mouseHovered)
-        self.view.mouseClicked.connect(self.mouseClicked)
-        self.splitter.addWidget(self.view)
+        self.view_widget = QtGui.QWidget()
+        self.view_layout = QtGui.QGridLayout()
+        self.view_widget.setLayout(self.view_layout)
+        self.view_layout.setSpacing(0)
+        self.view_layout.setContentsMargins(0,0,0,0)
+        self.splitter.addWidget(self.view_widget)
+
+        self.w1 = pg.GraphicsLayoutWidget()
+        self.w2 = pg.GraphicsLayoutWidget()
+        self.view1 = self.w1.addViewBox()
+        self.view2 = self.w2.addViewBox()
+        self.view1.setAspectLocked()
+        self.view2.setAspectLocked()
+        self.view1.invertY(False)
+        self.view2.invertY(False)
+        self.view_layout.addWidget(self.w1, 0, 0)
+        self.view_layout.addWidget(self.w2, 1, 0)
+
+        self.atlas_view = AtlasSliceView()
+        self.atlas_view.sig_slice_changed.connect(self.sliceChanged)
+        self.img1 = self.atlas_view.img1
+        self.img2 = self.atlas_view.img2
+        self.img2.mouseClicked.connect(self.mouseClicked)
+        self.view1.addItem(self.img1)
+        self.view2.addItem(self.img2)
+
+        self.target = Target()
+        self.target.setZValue(5000)
+        self.view2.addItem(self.target)
+        self.target.setVisible(False)
+
+        self.view1.addItem(self.atlas_view.line_roi, ignoreBounds=True)
+        self.view_layout.addWidget(self.atlas_view.zslider, 2, 0)
+        self.view_layout.addWidget(self.atlas_view.slider, 3, 0)
+        self.view_layout.addWidget(self.atlas_view.lut, 0, 1, 3, 1)
+
+        self.clipboard = QtGui.QApplication.clipboard()
+        
+        QtGui.QShortcut(QtGui.QKeySequence("Alt+Up"), self, self.slider_up)
+        QtGui.QShortcut(QtGui.QKeySequence("Alt+Down"), self, self.slider_down)
+        QtGui.QShortcut(QtGui.QKeySequence("Alt+Left"), self, self.tilt_left)
+        QtGui.QShortcut(QtGui.QKeySequence("Alt+Right"), self, self.tilt_right)
+        QtGui.QShortcut(QtGui.QKeySequence("Alt+1"), self, self.move_left)
+        QtGui.QShortcut(QtGui.QKeySequence("Alt+2"), self, self.move_right)
+
+        self.atlas_view.mouseHovered.connect(self.mouseHovered)
+        self.atlas_view.mouseClicked.connect(self.mouseClicked)
         
         self.statusLabel = QtGui.QLabel()
         self.layout.addWidget(self.statusLabel, 1, 0, 1, 1)
@@ -96,21 +139,21 @@ class AtlasViewer(QtGui.QWidget):
 
         # make sure atlas/label have the same size after downsampling
 
-        self.view.setData(self.displayAtlas, self.displayLabel, scale=self.atlas._info[-1]['vxsize']*ds)
+        self.setData(self.displayAtlas, self.displayLabel, scale=self.atlas._info[-1]['vxsize']*ds)
 
     def labelsChanged(self):
         lut = self.labelTree.lookupTable()
-        self.view.atlas_view.setLabelLUT(lut)        
+        self.atlas_view.setLabelLUT(lut)        
         
     def displayCtrlChanged(self, param, changes):
         update = False
         for param, change, value in changes:
             if param.name() == 'Composition':
-                self.view.setOverlay(value)
+                self.atlas_view.setOverlay(value)
             elif param.name() == 'Opacity':
-                self.view.setLabelOpacity(value)
+                self.atlas_view.setLabelOpacity(value)
             elif param.name() == 'Interpolate':
-                self.view.setInterpolation(value)
+                self.atlas_view.setInterpolation(value)
             else:
                 update = True
         if update:
@@ -147,9 +190,9 @@ class AtlasViewer(QtGui.QWidget):
     def mouseClicked(self, mouse_point):
         point, to_clipboard = self.getCcfPoint(mouse_point)
         self.pointLabel.setText(point)
-        self.view.target.setVisible(True)
-        self.view.target.setPos(self.view.view2.mapSceneToView(mouse_point[0].scenePos()))
-        self.view.clipboard.setText(to_clipboard)
+        self.target.setVisible(True)
+        self.target.setPos(self.view2.mapSceneToView(mouse_point[0].scenePos()))
+        self.clipboard.setText(to_clipboard)
 
     # Get CCF point coordinate and Structure id
     # Returns two strings. One used for display in a label and the other to put in the clipboard
@@ -162,15 +205,15 @@ class AtlasViewer(QtGui.QWidget):
         lims_str_id = (key for key, value in self.label._info[-1]['ai_ontology_map'] if value == mouse_point[1]).next()
         
         # compute the 4x4 transform matrix
-        a = self.scale_point_to_CCF(self.view.line_roi.origin)
-        ab = self.scale_vector_to_PIR(self.view.line_roi.ab_vector)
-        ac = self.scale_vector_to_PIR(self.view.line_roi.ac_vector)
+        a = self.scale_point_to_CCF(self.atlas_view.line_roi.origin)
+        ab = self.scale_vector_to_PIR(self.atlas_view.line_roi.ab_vector)
+        ac = self.scale_vector_to_PIR(self.atlas_view.line_roi.ac_vector)
         
         M0, M0i = points_to_aff.points_to_aff(a, np.array(ab), np.array(ac))
 
         # Find what the mouse point position is relative to the coordinate
-        ab_length = np.linalg.norm(self.view.line_roi.ab_vector)
-        ac_length = np.linalg.norm(self.view.line_roi.ac_vector)        
+        ab_length = np.linalg.norm(self.atlas_view.line_roi.ab_vector)
+        ac_length = np.linalg.norm(self.atlas_view.line_roi.ac_vector)        
         p = (mouse_point[0].pos().x()/ac_length, mouse_point[0].pos().y()/ab_length)
         
         ccf_location = np.dot(M0i, [p[1], p[0], 0, 1]) # use the inverse transform matrix and the mouse point
@@ -196,13 +239,6 @@ class AtlasViewer(QtGui.QWidget):
         # Convert matrix transform to a LIMS dictionary
         ob = points_to_aff.aff_to_lims_obj(M0, M0i)
 
-        # These are just for testing
-        # roi_origin_position = (self.view.line_roi.pos().x(), self.view.line_roi.pos().y())
-        # roi_size = (self.view.line_roi.size().x(), self.view.line_roi.size().y())
-        # roi_params = "{};{};{};{};{};{};{};{};{}".format(ob, roi_origin_position, roi_size, self.view.line_roi.ab_angle,
-        #                                                  self.view.line_roi.ac_angle, axis, self.view.line_roi.origin,
-        #                                                  self.view.line_roi.ab_vector, self.view.line_roi.ac_vector)
-        
         # clipboard_text = "{};{}".format(clipboard_text, roi_params)
         clipboard_text = "{};{}".format(clipboard_text, ob)
 
@@ -215,9 +251,9 @@ class AtlasViewer(QtGui.QWidget):
         Point is a tuple with values x, y, z (ordered) 
         """
         vxsize = self.atlas._info[-1]['vxsize'] * 1e6
-        p_to_ccf = ((self.view.atlas.shape[1] - point[0]) * vxsize,
-                    (self.view.atlas.shape[2] - point[1]) * vxsize,
-                    (self.view.atlas.shape[0] - point[2]) * vxsize)
+        p_to_ccf = ((self.atlas_view.atlas.shape[1] - point[0]) * vxsize,
+                    (self.atlas_view.atlas.shape[2] - point[1]) * vxsize,
+                    (self.atlas_view.atlas.shape[0] - point[2]) * vxsize)
         return p_to_ccf
     
     def scale_vector_to_PIR(self, vector):
@@ -238,18 +274,18 @@ class AtlasViewer(QtGui.QWidget):
         The pos is a tuple with values x, y, z
         """
         vxsize = self.atlas._info[-1]['vxsize'] * 1e6
-        return ((self.view.atlas.shape[1] - (pos[0] / vxsize)) * self.view.scale[0],
-                (self.view.atlas.shape[2] - (pos[1] / vxsize)) * self.view.scale[1],
-                (self.view.atlas.shape[0] - (pos[2] / vxsize)) * self.view.scale[1])
+        return ((self.atlas_view.atlas.shape[1] - (pos[0] / vxsize)) * self.atlas_view.scale[0],
+                (self.atlas_view.atlas.shape[2] - (pos[1] / vxsize)) * self.atlas_view.scale[1],
+                (self.atlas_view.atlas.shape[0] - (pos[2] / vxsize)) * self.atlas_view.scale[1])
 
     def vector_to_view(self, vector):
         """
         Scales vector to view coordinate size. vector is a tuple with x, y, z (in that order)   
         """
         vxsize = self.atlas._info[-1]['vxsize'] * 1e6
-        new_point = ((vector[0] / vxsize) * self.view.scale[0],
-                     (vector[1] / vxsize) * self.view.scale[1],
-                     (vector[2] / vxsize) * self.view.scale[1])  
+        new_point = ((vector[0] / vxsize) * self.atlas_view.scale[0],
+                     (vector[1] / vxsize) * self.atlas_view.scale[1],
+                     (vector[2] / vxsize) * self.atlas_view.scale[1])  
         return new_point
       
     # These are here to test. Add to coord_arg to test
@@ -275,11 +311,11 @@ class AtlasViewer(QtGui.QWidget):
         
         if len(coord_args) <= 4:
             # When only 4 points are given, assume point needs to be set using orientation == 'right'
-            translated_x = (self.view.atlas.shape[1] - (float(coord_args[0])/vxsize)) * self.view.scale[0] 
-            translated_y = (self.view.atlas.shape[2] - (float(coord_args[1])/vxsize)) * self.view.scale[0] 
-            translated_z = (self.view.atlas.shape[0] - (float(coord_args[2])/vxsize)) * self.view.scale[0] 
+            translated_x = (self.atlas_view.atlas.shape[1] - (float(coord_args[0])/vxsize)) * self.atlas_view.scale[0] 
+            translated_y = (self.atlas_view.atlas.shape[2] - (float(coord_args[1])/vxsize)) * self.atlas_view.scale[0] 
+            translated_z = (self.atlas_view.atlas.shape[0] - (float(coord_args[2])/vxsize)) * self.atlas_view.scale[0] 
             roi_origin = (translated_x, 0.0)
-            to_size = (self.view.atlas.shape[2] * self.view.scale[1], 0.0) 
+            to_size = (self.atlas_view.atlas.shape[2] * self.atlas_view.scale[1], 0.0) 
             to_ab_angle = 90
             to_ac_angle = 0
             target_p1 = translated_z 
@@ -298,21 +334,21 @@ class AtlasViewer(QtGui.QWidget):
             ab_vector = -np.array(self.vector_to_view(ab_vector))
             ac_vector = -np.array(self.vector_to_view(ac_vector))
                 
-            to_ac_angle = self.view.line_roi.get_ac_angle(ac_vector)
+            to_ac_angle = self.atlas_view.line_roi.get_ac_angle(ac_vector)
             
             # Where the origin of the ROI should be
             if to_ac_angle > 0:
                 roi_origin = ac_vector + roi_origin  
                 
-            to_size = self.view.line_roi.get_roi_size(ab_vector, ac_vector)
-            to_ab_angle = self.view.line_roi.get_ab_angle(ab_vector)
+            to_size = self.atlas_view.line_roi.get_roi_size(ab_vector, ac_vector)
+            to_ab_angle = self.atlas_view.line_roi.get_ab_angle(ab_vector)
         
-        self.view.target.setPos(target_p1, target_p2)
-        self.view.line_roi.setPos(pg.Point(roi_origin[0], roi_origin[1]))
-        self.view.line_roi.setSize(pg.Point(to_size))
-        self.view.line_roi.setAngle(to_ab_angle) 
-        self.view.slider.setValue(int(to_ac_angle))
-        self.view.target.setVisible(True)  # TODO: keep target visible when coming back to the same slice... how?
+        self.target.setPos(target_p1, target_p2)
+        self.atlas_view.line_roi.setPos(pg.Point(roi_origin[0], roi_origin[1]))
+        self.atlas_view.line_roi.setSize(pg.Point(to_size))
+        self.atlas_view.line_roi.setAngle(to_ab_angle) 
+        self.atlas_view.slider.setValue(int(to_ac_angle))
+        self.target.setVisible(True)  # TODO: keep target visible when coming back to the same slice... how?
        
     def get_target_position(self, ccf_location, M, ab_vector, ac_vector, vxsize):
         """
@@ -320,10 +356,46 @@ class AtlasViewer(QtGui.QWidget):
         """
         img_location = np.dot(M, ccf_location)
         
-        p1 = (np.linalg.norm(ac_vector) / vxsize * img_location[1]) * self.view.scale[0]
-        p2 = (np.linalg.norm(ab_vector) / vxsize * img_location[0]) * self.view.scale[0]
+        p1 = (np.linalg.norm(ac_vector) / vxsize * img_location[1]) * self.atlas_view.scale[0]
+        p2 = (np.linalg.norm(ab_vector) / vxsize * img_location[0]) * self.atlas_view.scale[0]
         
         return p1, p2
+
+    def slider_up(self):
+        self.atlas_view.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepAdd)
+        
+    def slider_down(self):
+        self.atlas_view.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepSub)
+        
+    def tilt_left(self):
+        self.atlas_view.line_roi.rotate(1)
+        
+    def tilt_right(self):
+        self.atlas_view.line_roi.rotate(-1)
+        
+    def move_right(self):
+        # print '-- Pos'
+        # print self.line_roi.pos()
+        self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() + .0001, self.atlas_view.line_roi.pos().y()))
+        
+    def move_left(self):
+        # print '-- Pos'
+        # print self.line_roi.pos()
+        self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() - .0001, self.atlas_view.line_roi.pos().y()))
+
+    def setData(self, image, label, scale=None):
+        self.atlas_view.set_data(image, label, scale)
+        self.view1.autoRange(items=[self.img1.atlasImg])
+
+    def sliceChanged(self):
+        self.view2.autoRange(items=[self.img2.atlasImg])
+        self.target.setVisible(False)
+    
+    def closeEvent(self, ev):
+        self.imv1.close()
+        self.imv2.close()
+        self.atlas_view.close()
+
     
 
 class CoordinatesCtrl(QtGui.QWidget):
@@ -378,95 +450,6 @@ class CoordinatesCtrl(QtGui.QWidget):
             error += " y coordinate {} is not within CCF range".format(y)
         
         return error
-    
-        
-class VolumeSliceView(QtGui.QWidget):
-    mouseHovered = QtCore.Signal(object)
-    mouseClicked = QtCore.Signal(object)
-
-    def __init__(self, parent=None):
-        QtGui.QWidget.__init__(self, parent)
-        self.resize(800, 800)
-        self.layout = QtGui.QGridLayout()
-        self.setLayout(self.layout)
-        self.layout.setSpacing(0)
-        self.layout.setContentsMargins(0,0,0,0)
-
-        self.w1 = pg.GraphicsLayoutWidget()
-        self.w2 = pg.GraphicsLayoutWidget()
-        self.view1 = self.w1.addViewBox()
-        self.view2 = self.w2.addViewBox()
-        self.view1.setAspectLocked()
-        self.view2.setAspectLocked()
-        self.view1.invertY(False)
-        self.view2.invertY(False)
-        self.layout.addWidget(self.w1, 0, 0)
-        self.layout.addWidget(self.w2, 1, 0)
-
-        self.atlas_view = AtlasSliceView()
-        self.atlas_view.sig_slice_changed.connect(self.sliceChanged)
-        self.img1 = self.atlas_view.img1
-        self.img2 = self.atlas_view.img2
-        self.img2.mouseClicked.connect(self.mouseClicked)
-        self.view1.addItem(self.img1)
-        self.view2.addItem(self.img2)
-
-        self.target = Target()
-        self.target.setZValue(5000)
-        self.view2.addItem(self.target)
-        self.target.setVisible(False)
-
-        self.view1.addItem(self.atlas_view.line_roi, ignoreBounds=True)
-        self.layout.addWidget(self.atlas_view.zslider, 2, 0)
-        self.layout.addWidget(self.atlas_view.slider, 3, 0)
-        self.layout.addWidget(self.atlas_view.lut, 0, 1, 3, 1)
-
-        self.clipboard = QtGui.QApplication.clipboard()
-        
-        QtGui.QShortcut(QtGui.QKeySequence("Alt+Up"), self, self.slider_up)
-        QtGui.QShortcut(QtGui.QKeySequence("Alt+Down"), self, self.slider_down)
-        QtGui.QShortcut(QtGui.QKeySequence("Alt+Left"), self, self.tilt_left)
-        QtGui.QShortcut(QtGui.QKeySequence("Alt+Right"), self, self.tilt_right)
-        QtGui.QShortcut(QtGui.QKeySequence("Alt+1"), self, self.move_left)
-        QtGui.QShortcut(QtGui.QKeySequence("Alt+2"), self, self.move_right)
-
-    def slider_up(self):
-        self.atlas_view.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepAdd)
-        
-    def slider_down(self):
-        self.atlas_view.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepSub)
-        
-    def tilt_left(self):
-        self.atlas_view.line_roi.rotate(1)
-        
-    def tilt_right(self):
-        self.atlas_view.line_roi.rotate(-1)
-        
-    def move_right(self):
-        # print '-- Pos'
-        # print self.line_roi.pos()
-        self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() + .0001, self.atlas_view.line_roi.pos().y()))
-        
-    def move_left(self):
-        # print '-- Pos'
-        # print self.line_roi.pos()
-        self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() - .0001, self.atlas_view.line_roi.pos().y()))
-
-    def setData(self, image, label, scale=None):
-        self.atlas_view.set_data(image, label, scale)
-        self.view1.autoRange(items=[self.img1.atlasImg])
-
-    def sliceChanged(self):
-        self.view2.autoRange(items=[self.img2.atlasImg])
-        self.target.setVisible(False)
-        self.w1.viewport().repaint()  # repaint immediately to avoid processing more mouse events before next repaint
-        self.w2.viewport().repaint()
-
-    def closeEvent(self, ev):
-        self.imv1.close()
-        self.imv2.close()
-        self.atlas_view.close()
-
 
 
 class Target(pg.GraphicsObject):
