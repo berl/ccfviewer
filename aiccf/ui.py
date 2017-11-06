@@ -9,13 +9,16 @@ from .signal import SignalBlock
 class AtlasSliceView(QtCore.QObject):
     """A collection of user interface elements bound together:
     
-    * One AtlasImageItems displaying an orthogonal view of the atlas
+    * One AtlasImageItem displaying an orthogonal view of the atlas
     * An ROI object that defines the slice to be extracted from the orthogonal
       view of the atlas
     * A second AtlasImageItem that displays the sliced view
     * A HistogramLUTItem used to control color/contrast in both images
     * An AtlasDisplayCtrl that sets options for how all elements are drawn
     * A LabelTree that is used to selectively color specific brain regions
+    
+    These are stored as attributes of this object and are not inserted into
+    any top-level layout. 
     """
     
     sig_slice_changed = QtCore.Signal()  # slice plane changed
@@ -27,8 +30,6 @@ class AtlasSliceView(QtCore.QObject):
         QtCore.QObject.__init__(self)
 
         self.scale = None
-        self.atlas = None
-        self.label = None
         self.interpolate = True
         
         self.img1 = AtlasImageItem()
@@ -37,13 +38,14 @@ class AtlasSliceView(QtCore.QObject):
         self.img2.mouseHovered.connect(self.mouseHovered)
         
         self.line_roi = RulerROI([.005, 0], [.008, 0], angle=90, pen=(0, 9), movable=False)
-        self.line_roi.sigRegionChanged.connect(self.updateSlice)
+        self.line_roi.sigRegionChanged.connect(self.update_slice_image)
 
         self.zslider = QtGui.QSlider(QtCore.Qt.Horizontal)
-        self.zslider.valueChanged.connect(self.updateImage)
+        self.zslider.valueChanged.connect(self.update_ortho_image)
 
-        self.slider = QtGui.QSlider(QtCore.Qt.Horizontal)
-        self.slider.valueChanged.connect(self.sliderRotation)
+        self.angle_slider = QtGui.QSlider(QtCore.Qt.Horizontal)
+        self.angle_slider.setRange(-45, 45)
+        self.angle_slider.valueChanged.connect(self.angle_slider_changed)
         
         self.lut = pg.HistogramLUTWidget()
         self.lut.setImageItem(self.img1.atlasImg)
@@ -51,33 +53,21 @@ class AtlasSliceView(QtCore.QObject):
         self.lut.sigLevelsChanged.connect(self.histlutChanged)
 
         self.displayCtrl = AtlasDisplayCtrl()
-        self.displayCtrl.params.sigTreeStateChanged.connect(self.displayCtrlChanged)
+        self.displayCtrl.params.sigTreeStateChanged.connect(self.display_ctrl_changed)
 
         self.labelTree = LabelTree()
-        self.labelTree.labelsChanged.connect(self.labelsChanged)
+        self.labelTree.labelsChanged.connect(self.labels_changed)
 
-    def set_data1(self, atlas_data):
+    def set_data(self, atlas_data):
         self.atlas_data = atlas_data
-        self.atlas = None
-        self.label = None
         self.display_atlas = None
         self.display_label = None
-        self.setAtlas(atlas_data.image)
-        self.setLabels(atlas_data.label, atlas_data.ontology)
+        self.labelTree.set_ontology(atlas_data.ontology)
+        self.update_image_data()
+        self.labels_changed()
 
-    def setLabels(self, label, ontology):
-        self.label = label
-        self.ontology = ontology
-        self.labelTree.set_ontology(ontology)
-        self.updateImage1()
-        self.labelsChanged()
-
-    def setAtlas(self, atlas):
-        self.atlas = atlas
-        self.updateImage1()
-
-    def updateImage1(self):
-        if self.atlas is None or self.label is None:
+    def update_image_data(self):
+        if self.atlas_data.image is None or self.atlas_data.label is None:
             return
         axis = self.displayCtrl.params['Orientation']
         axes = {
@@ -85,34 +75,34 @@ class AtlasSliceView(QtCore.QObject):
             'dorsal': ('dorsal', 'right', 'anterior'),
             'anterior': ('anterior', 'right', 'dorsal')
         }[axis]
-        order = [self.atlas._interpretAxis(ax) for ax in axes]
+        order = [self.atlas_data.image._interpretAxis(ax) for ax in axes]
 
         # transpose, flip, downsample images
         ds = self.displayCtrl.params['Downsample']
-        self.display_atlas = self.atlas.view(np.ndarray).transpose(order)
+        self.display_atlas = self.atlas_data.image.view(np.ndarray).transpose(order)
         with pg.BusyCursor():
             for ax in (0, 1, 2):
                 self.display_atlas = pg.downsample(self.display_atlas, ds, axis=ax)
-        self.display_label = self.label.view(np.ndarray).transpose(order)[::ds, ::ds, ::ds]
+        self.display_label = self.atlas_data.label.view(np.ndarray).transpose(order)[::ds, ::ds, ::ds]
 
         # make sure atlas/label have the same size after downsampling
 
-        scale = self.atlas._info[-1]['vxsize']*ds
+        scale = self.atlas_data.image._info[-1]['vxsize']*ds
         self.scale = (scale, scale)
 
         self.zslider.setMaximum(self.display_atlas.shape[0])
         self.zslider.setValue(self.display_atlas.shape[0] // 2)
-        self.slider.setRange(-45, 45)
-        self.slider.setValue(0)
-        self.updateImage()
-        self.updateSlice()
+        self.angle_slider.setValue(0)
+        self.update_ortho_image()
+        self.update_slice_image()
         self.lut.setLevels(self.display_atlas.min(), self.display_atlas.max())
 
-    def labelsChanged(self):
+    def labels_changed(self):
+        # reapply label colors
         lut = self.labelTree.lookupTable()
         self.setLabelLUT(lut)        
         
-    def displayCtrlChanged(self, param, changes):
+    def display_ctrl_changed(self, param, changes):
         update = False
         for param, change, value in changes:
             if param.name() == 'Composition':
@@ -124,15 +114,15 @@ class AtlasSliceView(QtCore.QObject):
             else:
                 update = True
         if update:
-            self.updateImage1()
+            self.update_image_data()
 
-    def updateImage(self):
+    def update_ortho_image(self):
         z = self.zslider.value()
         self.img1.setData(self.display_atlas[z], self.display_label[z], scale=self.scale)
         self.sig_image_changed.emit()
 
-    def updateSlice(self):
-        rotation = self.slider.value()
+    def update_slice_image(self):
+        rotation = self.angle_slider.value()
 
         if self.display_atlas is None:
             return
@@ -156,10 +146,10 @@ class AtlasSliceView(QtCore.QObject):
             w[0].viewport().repaint()
             #w[0].viewport().repaint()
         
-    def sliderRotation(self):
-        rotation = self.slider.value()
+    def angle_slider_changed(self):
+        rotation = self.angle_slider.value()
         self.set_rotation_roi(self.img1.atlasImg, rotation)
-        self.updateSlice()
+        self.update_slice_image()
 
     def close(self):
         self.data = None
@@ -209,12 +199,12 @@ class AtlasSliceView(QtCore.QObject):
             adjacent = opposite / (np.tan(np.radians(-(90 - d.angle(pg.Point(1, 0))))))
         
         # This is kind of a hack to avoid recursion error. Using update=False doesn't move the handles.
-        self.line_roi.sigRegionChanged.disconnect(self.updateSlice)  
+        self.line_roi.sigRegionChanged.disconnect(self.update_slice_image)  
         # increase size to denote rotation
         self.line_roi.setSize(pg.Point(d_angle.length(), hyp * 2))
         # Shift position in order to keep the cutting axis in the middle
         self.line_roi.setPos(pg.Point((origin_roi.x() * self.scale[-1]) + adjacent, (origin_roi.y() * self.scale[-1]) + opposite))
-        self.line_roi.sigRegionChanged.connect(self.updateSlice)
+        self.line_roi.sigRegionChanged.connect(self.update_slice_image)
 
     def get_offset(self, rotation):
         theta = np.radians(-rotation)
@@ -230,7 +220,7 @@ class AtlasSliceView(QtCore.QObject):
 
         # y = mx + b
         # Calculate the x-intercept. using half the distance in the z-dimension as b. Since we want the axis of rotation in the middle
-        offset = (-self.atlas.shape[0] / 2) / m
+        offset = (-self.atlas_data.image.shape[0] / 2) / m
 
         return abs(offset)
 

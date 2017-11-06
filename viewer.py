@@ -62,7 +62,7 @@ class AtlasViewer(QtGui.QWidget):
 
         self.view1.addItem(self.atlas_view.line_roi, ignoreBounds=True)
         self.view_layout.addWidget(self.atlas_view.zslider, 2, 0)
-        self.view_layout.addWidget(self.atlas_view.slider, 3, 0)
+        self.view_layout.addWidget(self.atlas_view.angle_slider, 3, 0)
         self.view_layout.addWidget(self.atlas_view.lut, 0, 1, 3, 1)
 
         self.clipboard = QtGui.QApplication.clipboard()
@@ -98,7 +98,7 @@ class AtlasViewer(QtGui.QWidget):
         self.ctrlLayout.addWidget(self.coordinateCtrl)
 
     def set_data(self, atlas_data):
-        self.atlas_view.set_data1(atlas_data)
+        self.atlas_view.set_data(atlas_data)
         self.view1.autoRange(items=[self.img1.atlasImg])
         self.coordinateCtrl.atlas_shape = atlas_data.shape
         
