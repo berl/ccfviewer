@@ -1076,12 +1076,12 @@ if __name__ == '__main__':
 
     atlas_data = CCFAtlasData(image_cache_file='ccf.ma', label_cache_file='ccf_label.ma')
     
-    if atlas_data.image is None:
+    if atlas_data.image is None or atlas_data.label is None:
         # nothing loaded from cache
         displayMessage('Please Select NRRD Atlas File')
         nrrd_file = QtGui.QFileDialog.getOpenFileName(None, "Select NRRD atlas file")
         with pg.BusyCursor():
-            atlas_data.load_image_file(nrrd_file)
+            atlas_data.load_image_data(nrrd_file)
         
         displayMessage('Select NRRD annotation file')
         nrrd_file = QtGui.QFileDialog.getOpenFileName(None, "Select NRRD annotation file")
@@ -1089,7 +1089,7 @@ if __name__ == '__main__':
         displayMessage('Select ontology file (json)')
         onto_file = QtGui.QFileDialog.getOpenFileName(None, "Select ontology file (json)")
         
-        atlas_data.load_label_file(nrrd_file, onto_file)
+        atlas_data.load_label_data(nrrd_file, onto_file)
     
     v.set_data(atlas_data)
 

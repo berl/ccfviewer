@@ -1,4 +1,6 @@
-import os, sys
+import os, sys, json
+from collections import OrderedDict
+import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import metaarray
 
@@ -32,8 +34,9 @@ class CCFAtlasData(object):
         writeFile(self.image, self._image_cache_file)
         
     def load_label_data(self, label_file, ontology_file):
-        self.label = loadNRRDLabels(filename)
-        writeFile(self.image, self._image_cache_file)
+        self.label = read_nrrd_labels(label_file, ontology_file)
+        self.ontology = self.label._info[-1]['ontology']
+        writeFile(self.label, self._label_cache_file)
         
     def load_image_cache(self):
         """Load a MetaArray-format atlas image file.
@@ -59,40 +62,7 @@ class CCFAtlasData(object):
         """
 
     
-class CCFAtlasSlice(object):
-    """Represents a 2D or 3D slice through volumetric atlas data.
-    
-    The slice specifies the position and orientation of a plane or rectangular
-    slice, and manages extracting data from the volume as well as generating
-    the relevant coordinate transforms. 
-    """
-    def __init__(self, atlas_data):
-        self.atlas_data = atlas_data
-        self.shape = shape
-        self.origin = origin
-        self.vectors = vectors
-    
-    def set_atlas_data(self, atlas):
-        self.atlas_data = atlas
-    
-    def set_slice(self, shape, origin, vectors):
-        self.shape = shape
-        self.origin = origin
-        self.vectors = vectors
-    
-    def atlas_transform(self):
-        """Return a transform that maps from the 2D/3D coordinates of the slice
-        to the 3D voxel coordinates of the atlas.
-        """
-
-    def ccf_transform(self):
-        return self.atlas_transform() * self.atlas_data.ccf_transform()
-
-    def stereotaxic_transform(self):
-        return self.atlas_transform() * self.atlas_data.stereotaxic_transform()
-
-
-def read_nrrd_atlas(nrrd_file=None):
+def read_nrrd_atlas(nrrd_file):
     """
     Download atlas files from:
       http://help.brain-map.org/display/mouseconnectivity/API#API-DownloadAtlas
@@ -122,7 +92,7 @@ def read_nrrd_atlas(nrrd_file=None):
     return ma
 
 
-def read_nrrd_labels(nrrdFile=None, ontologyFile=None):
+def read_nrrd_labels(nrrdFile, ontologyFile):
     """
     Download label files from:
       http://help.brain-map.org/display/mouseconnectivity/API#API-DownloadAtlas
@@ -143,9 +113,9 @@ def read_nrrd_labels(nrrdFile=None, ontologyFile=None):
 
     with pg.ProgressDialog("Loading annotation file...", 0, 5, wait=0) as dlg:
         print "Loading annotation file..."
-        app.processEvents()
+        pg.QtGui.QApplication.processEvents()
         # Read ontology and convert to flat table
-        onto = json.load(open(ontoFile, 'rb'))
+        onto = json.load(open(ontologyFile, 'rb'))
         onto = parse_ontology(onto['msg'][0])
         l1 = max([len(row[2]) for row in onto])
         l2 = max([len(row[3]) for row in onto])
@@ -184,7 +154,7 @@ def read_nrrd_labels(nrrdFile=None, ontologyFile=None):
         inds.add(i)
    
     with pg.ProgressDialog("Remapping annotations to 16-bit (please be patient with me; this can take several minutes) ...", 0, (~mask).sum(), wait=0) as dlg:
-        app.processEvents()
+        pg.QtGui.QApplication.processEvents()
         for i in u[~mask]:
             while next_id in inds:
                 next_id -= 1
@@ -225,9 +195,10 @@ def writeFile(data, filename):
     if dataDir != '' and not os.path.exists(dataDir):
         os.makedirs(dataDir)
 
+    tmp = filename + '.tmp'
     if max(data.shape) > 200 and min(data.shape) > 200:
-        data.write(filename + '.tmp', chunks=(200, 200, 200))
+        data.write(tmp, chunks=(200, 200, 200))
     else:
-        data.write(filename + '.tmp')
+        data.write(tmp)
         
-    os.rename(file+'.tmp', filename)
+    os.rename(tmp, filename)
