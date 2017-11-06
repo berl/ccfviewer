@@ -6,14 +6,13 @@ import json
 from collections import OrderedDict
 import numpy as np
 import pyqtgraph as pg
-import pyqtgraph.functions as fn
 import pyqtgraph.metaarray as metaarray
 from pyqtgraph.Qt import QtGui, QtCore
 import math
 import points_to_aff
 
 from aiccf.data import CCFAtlasData
-from aiccf.ui import AtlasDisplayCtrl, LabelTree, AtlasImageItem
+from aiccf.ui import AtlasDisplayCtrl, LabelTree, AtlasSliceView
 
 
 class AtlasViewer(QtGui.QWidget):
@@ -101,7 +100,7 @@ class AtlasViewer(QtGui.QWidget):
 
     def labelsChanged(self):
         lut = self.labelTree.lookupTable()
-        self.view.setLabelLUT(lut)        
+        self.view.atlas_view.setLabelLUT(lut)        
         
     def displayCtrlChanged(self, param, changes):
         update = False
@@ -386,12 +385,7 @@ class VolumeSliceView(QtGui.QWidget):
     mouseClicked = QtCore.Signal(object)
 
     def __init__(self, parent=None):
-        self.atlas = None
-        self.label = None
-        self.interpolate = True
-
         QtGui.QWidget.__init__(self, parent)
-        self.scale = None
         self.resize(800, 800)
         self.layout = QtGui.QGridLayout()
         self.setLayout(self.layout)
@@ -409,10 +403,10 @@ class VolumeSliceView(QtGui.QWidget):
         self.layout.addWidget(self.w1, 0, 0)
         self.layout.addWidget(self.w2, 1, 0)
 
-        self.img1 = AtlasImageItem()
-        self.img2 = AtlasImageItem()
-        self.img1.mouseHovered.connect(self.mouseHovered)
-        self.img2.mouseHovered.connect(self.mouseHovered)
+        self.atlas_view = AtlasSliceView()
+        self.atlas_view.sig_slice_changed.connect(self.sliceChanged)
+        self.img1 = self.atlas_view.img1
+        self.img2 = self.atlas_view.img2
         self.img2.mouseClicked.connect(self.mouseClicked)
         self.view1.addItem(self.img1)
         self.view2.addItem(self.img2)
@@ -422,23 +416,10 @@ class VolumeSliceView(QtGui.QWidget):
         self.view2.addItem(self.target)
         self.target.setVisible(False)
 
-        self.line_roi = RulerROI([.005, 0], [.008, 0], angle=90, pen=(0, 9), movable=False)
-        self.view1.addItem(self.line_roi, ignoreBounds=True)
-        self.line_roi.sigRegionChanged.connect(self.updateSlice)
-
-        self.zslider = QtGui.QSlider(QtCore.Qt.Horizontal)
-        self.zslider.valueChanged.connect(self.updateImage)
-        self.layout.addWidget(self.zslider, 2, 0)
-
-        self.slider = QtGui.QSlider(QtCore.Qt.Horizontal)
-        self.slider.valueChanged.connect(self.sliderRotation)
-        self.layout.addWidget(self.slider, 3, 0)
-
-        self.lut = pg.HistogramLUTWidget()
-        self.lut.setImageItem(self.img1.atlasImg)
-        self.lut.sigLookupTableChanged.connect(self.histlutChanged)
-        self.lut.sigLevelsChanged.connect(self.histlutChanged)
-        self.layout.addWidget(self.lut, 0, 1, 3, 1)
+        self.view1.addItem(self.atlas_view.line_roi, ignoreBounds=True)
+        self.layout.addWidget(self.atlas_view.zslider, 2, 0)
+        self.layout.addWidget(self.atlas_view.slider, 3, 0)
+        self.layout.addWidget(self.atlas_view.lut, 0, 1, 3, 1)
 
         self.clipboard = QtGui.QApplication.clipboard()
         
@@ -450,305 +431,42 @@ class VolumeSliceView(QtGui.QWidget):
         QtGui.QShortcut(QtGui.QKeySequence("Alt+2"), self, self.move_right)
 
     def slider_up(self):
-        self.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepAdd)
+        self.atlas_view.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepAdd)
         
     def slider_down(self):
-        self.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepSub)
+        self.atlas_view.slider.triggerAction(QtGui.QAbstractSlider.SliderSingleStepSub)
         
     def tilt_left(self):
-        self.line_roi.rotate(1)
+        self.atlas_view.line_roi.rotate(1)
         
     def tilt_right(self):
-        self.line_roi.rotate(-1)
+        self.atlas_view.line_roi.rotate(-1)
         
     def move_right(self):
         # print '-- Pos'
         # print self.line_roi.pos()
-        self.line_roi.setPos((self.line_roi.pos().x() + .0001, self.line_roi.pos().y()))
+        self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() + .0001, self.atlas_view.line_roi.pos().y()))
         
     def move_left(self):
         # print '-- Pos'
         # print self.line_roi.pos()
-        self.line_roi.setPos((self.line_roi.pos().x() - .0001, self.line_roi.pos().y()))
+        self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() - .0001, self.atlas_view.line_roi.pos().y()))
 
-    def setData(self, atlas, label, scale=None):
-        if np.isscalar(scale):
-            scale = (scale, scale)
-        self.atlas = atlas
-        self.label = label
-        if self.scale != scale:
-            self.scale = scale
+    def setData(self, image, label, scale=None):
+        self.atlas_view.set_data(image, label, scale)
+        self.view1.autoRange(items=[self.img1.atlasImg])
 
-        self.zslider.setMaximum(atlas.shape[0])
-        self.zslider.setValue(atlas.shape[0] // 2)
-        self.slider.setRange(-45, 45)
-        self.slider.setValue(0)
-        self.updateImage(autoRange=True)
-        self.updateSlice()
-        self.lut.setLevels(atlas.min(), atlas.max())
-
-    def updateImage(self, autoRange=False):
-        z = self.zslider.value()
-        self.img1.setData(self.atlas[z], self.label[z], scale=self.scale)
-        if autoRange:
-            self.view1.autoRange(items=[self.img1.atlasImg])
-
-    def setLabelLUT(self, lut):
-        self.img1.setLUT(lut)
-        self.img2.setLUT(lut)
-
-    def updateSlice(self):
-        rotation = self.slider.value()
-
-        if self.atlas is None:
-            return
-
-        if rotation == 0:
-            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, axes=(1, 2), order=int(self.interpolate))
-            label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, axes=(1, 2), order=0)
-        else:
-            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=int(self.interpolate))
-            label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=0)
-
-        if atlas.size == 0:
-            return
-        
-        self.img2.setData(atlas, label, scale=self.scale)
+    def sliceChanged(self):
         self.view2.autoRange(items=[self.img2.atlasImg])
         self.target.setVisible(False)
         self.w1.viewport().repaint()  # repaint immediately to avoid processing more mouse events before next repaint
         self.w2.viewport().repaint()
-        
-    def sliderRotation(self):
-        rotation = self.slider.value()
-        self.set_rotation_roi(self.img1.atlasImg, rotation)
-        self.updateSlice()
-
-    def set_rotation_roi(self, img, rotation):
-
-        h1, h2, h3, h4, h5 = self.line_roi.getHandles()
-
-        d_angle = pg.Point(h2.pos() - h1.pos())  # This gives the length in ccf coordinate size 
-        d = pg.Point(self.line_roi.mapToItem(img, h2.pos()) - self.line_roi.mapToItem(img, h1.pos()))
-
-        origin_roi = self.line_roi.mapToItem(img, h1.pos())
-
-        if rotation == 0:
-            offset = 0
-        else:
-            offset = self.get_offset(rotation)
-        
-        # This calculates by how much the ROI needs to shift
-        if d.angle(pg.Point(1, 0)) == 90.0:
-            # when ROI is on a 90 degree angle, can't really calculate using a right-angle triangle, ugh
-            hyp, opposite, adjacent = offset * self.scale[0], 0, offset * self.scale[0]
-        else:
-            hyp = (offset * self.scale[0])  # / (math.cos(math.radians(-(90 - d.angle(pg.Point(1, 0)))))) 
-            opposite = (math.sin(math.radians(-(90 - d.angle(pg.Point(1, 0)))))) * hyp
-            adjacent = opposite / (math.tan(math.radians(-(90 - d.angle(pg.Point(1, 0))))))
-        
-        # This is kind of a hack to avoid recursion error. Using update=False doesn't move the handles.
-        self.line_roi.sigRegionChanged.disconnect(self.updateSlice)  
-        # increase size to denote rotation
-        self.line_roi.setSize(pg.Point(d_angle.length(), hyp * 2))
-        # Shift position in order to keep the cutting axis in the middle
-        self.line_roi.setPos(pg.Point((origin_roi.x() * self.scale[-1]) + adjacent, (origin_roi.y() * self.scale[-1]) + opposite))
-        self.line_roi.sigRegionChanged.connect(self.updateSlice)
-
-    def get_offset(self, rotation):
-        theta = math.radians(-rotation)
-
-        # Figure out the unit vector with theta angle
-        x, z = 0, 1
-        dc, ds = math.cos(theta), math.sin(theta)
-        xv = dc * x - ds * z
-        zv = ds * x + dc * z
-
-        # Figure out the slope of the unit vector
-        m = zv / xv
-
-        # y = mx + b
-        # Calculate the x-intercept. using half the distance in the z-dimension as b. Since we want the axis of rotation in the middle
-        offset = (-self.atlas.shape[0] / 2) / m
-
-        return abs(offset)
 
     def closeEvent(self, ev):
         self.imv1.close()
         self.imv2.close()
-        self.data = None
+        self.atlas_view.close()
 
-    def histlutChanged(self):
-        # note: img1 is updated automatically; only bneed to update img2 to match
-        self.img2.atlasImg.setLookupTable(self.lut.getLookupTable(n=256))
-        self.img2.atlasImg.setLevels(self.lut.getLevels())
-
-    def setOverlay(self, o):
-        self.img1.setOverlay(o)
-        self.img2.setOverlay(o)
-
-    def setLabelOpacity(self, o):
-        self.img1.setLabelOpacity(o)
-        self.img2.setLabelOpacity(o)
-
-    def setInterpolation(self, interp):
-        assert isinstance(interp, bool)
-        self.interpolate = interp
-
-
-class RulerROI(pg.ROI):
-    """
-    ROI subclass with one rotate handle, one scale-rotate handle and one translate handle. Rotate handles handles define a line. 
-    
-    ============== =============================================================
-    **Arguments**
-    positions      (list of two length-2 sequences) 
-    \**args        All extra keyword arguments are passed to ROI()
-    ============== =============================================================
-    """
-    
-    def __init__(self, pos, size, **args):
-        pg.ROI.__init__(self, pos, size, **args)
-        self.ab_vector = (0, 0, 0)  # This is the vector pointing up/down from the origin
-        self.ac_vector = (0, 0, 0)  # This is the vector pointing across form the orign
-        self.origin = (0, 0, 0)     # This is the origin
-        self.ab_angle = 90  # angle on the ab_vector
-        self.ac_angle = 0   # angle of the ac_vector 
-        self.addRotateHandle([0, 0.5], [1, 1])
-        self.addScaleRotateHandle([1, 0.5], [0.5, 0.5])
-        self.addTranslateHandle([0.5, 0.5])
-        self.addFreeHandle([0, 1], [0, 0])  
-        self.addFreeHandle([0, 0], [0, 0])
-        self.newRoi = pg.ROI((0, 0), [1, 5], parent=self, pen=pg.mkPen('w', style=QtCore.Qt.DotLine))
-
-    def paint(self, p, *args):
-        pg.ROI.paint(self, p, *args)
-        h1 = self.handles[0]['item'].pos()
-        h2 = self.handles[1]['item'].pos()
-        h4 = self.handles[3]['item'] 
-        h5 = self.handles[4]['item'] 
-        h4.setVisible(False)
-        h5.setVisible(False)
-        p1 = p.transform().map(h1)
-        p2 = p.transform().map(h2)
-
-        vec = pg.Point(h2) - pg.Point(h1)
-        length = vec.length()
-
-        pvec = p2 - p1
-        pvecT = pg.Point(pvec.y(), -pvec.x())
-        pos = 0.5 * (p1 + p2) + pvecT * 40 / pvecT.length()
-
-        angle = pg.Point(1, 0).angle(pg.Point(pvec)) 
-        self.ab_angle = angle
-        
-        # Overlay a line to signal which side of the ROI is the back.
-        if self.ac_angle > 0:
-            self.newRoi.setVisible(True)
-            self.newRoi.setPos(h5.pos())
-        elif self.ac_angle < 0:
-            self.newRoi.setVisible(True)
-            self.newRoi.setPos(h4.pos())
-        else:
-            self.newRoi.setVisible(False)
-            
-        self.newRoi.setSize(pg.Point(self.size()[0], 0))
-        
-        p.resetTransform()
-
-        txt = pg.siFormat(length, suffix='m') + '\n%0.1f deg' % angle + '\n%0.1f deg' % self.ac_angle
-        p.drawText(QtCore.QRectF(pos.x() - 50, pos.y() - 50, 100, 100), QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter, txt)
-
-    def boundingRect(self):
-        r = pg.ROI.boundingRect(self)
-        pxw = 50 * self.pixelLength(pg.Point([1, 0]))
-        return r.adjusted(-50, -50, 50, 50)
-
-    def getArrayRegion(self, data, img, axes=(0, 1), order=1, rotation=0, **kwds):
-
-        imgPts = [self.mapToItem(img, h.pos()) for h in self.getHandles()]
-
-        d = pg.Point(imgPts[1] - imgPts[0]) # This is the xy direction vector
-        o = pg.Point(imgPts[0])
-       
-        if rotation != 0:
-            ac_vector, ac_vector_length, origin = self.get_affine_slice_params(data, img, rotation)
-            rgn = fn.affineSlice(data, shape=(int(ac_vector_length), int(d.length())), vectors=[ac_vector, (d.norm().x(), d.norm().y(), 0)],
-                                 origin=origin, axes=axes, order=order, **kwds) 
-            
-            # Save vector and origin
-            self.origin = origin
-            self.ac_vector = ac_vector * ac_vector_length
-        else:
-            rgn = fn.affineSlice(data, shape=(int(d.length()),), vectors=[pg.Point(d.norm())], origin=o, axes=axes, order=order, **kwds)
-            # Save vector and origin
-            self.ac_vector = (0, 0, data.shape[0])
-            self.origin = (o.x(), o.y(), 0.0) 
-        
-        # save this as well
-        self.ab_vector = (d.x(), d.y(), 0)
-        self.ac_angle = rotation
-        
-        return rgn
-
-    def get_affine_slice_params(self, data, img, rotation):
-        """
-        Use the position of this ROI handles to get a new vector for the slice view's x-z direction.
-        """
-        counter_clockwise = rotation < 0
-        
-        h1, h2, h3, h4, h5 = self.getHandles()
-        origin_roi = self.mapToItem(img, h5.pos())
-        left_corner = self.mapToItem(img, h4.pos())
-        
-        if counter_clockwise:
-            origin = np.array([origin_roi.x(), origin_roi.y(), 0])
-            end_point = np.array([left_corner.x(), left_corner.y(), data.shape[0]])
-        else:
-            origin = np.array([left_corner.x(), left_corner.y(), 0])
-            end_point = np.array([origin_roi.x(), origin_roi.y(), data.shape[0]])
-
-        new_vector = end_point - origin
-        ac_vector_length = np.sqrt(new_vector.dot(new_vector))
-        
-        return (new_vector[0], new_vector[1], new_vector[2]) / ac_vector_length, ac_vector_length, (origin[0], origin[1], origin[2])
-    
-    def get_roi_size(self, ab_vector, ac_vector):
-        """
-        Returns the size of the ROI expected from the given vectors.
-        """
-        # Find the width
-        w = pg.Point(ab_vector[0], ab_vector[1]) 
-    
-        # Find the length
-        l = pg.Point(ac_vector[0], ac_vector[1])
-        
-        return w.length(), l.length()
-    
-    def get_ab_angle(self, with_ab_vector=None):
-        """
-        Gets ROI.ab_angle. If with_ab_vector is given, then the angle returned is with respect to the given vector 
-        """
-        if with_ab_vector is not None:
-            corner = pg.Point(with_ab_vector[0], with_ab_vector[1])
-            return corner.angle(pg.Point(1, 0))
-        else:
-            return self.ab_angle
-        
-    def get_ac_angle(self, with_ac_vector=None):
-        """
-        Gets ROI.ac_angle. If with_ac_vector is given, then the angle returned is with respect to the given vector 
-        """
-        if with_ac_vector is not None:
-            l = pg.Point(with_ac_vector[0], with_ac_vector[1])  # Explain this. 
-            corner = pg.Point(l.length(), with_ac_vector[2])
-            
-            if with_ac_vector[0] < 0:  # Make sure this points to the correct direction 
-                corner = pg.Point(-l.length(), with_ac_vector[2])
-            
-            return pg.Point(0, 1).angle(corner)
-        else:
-            return self.ac_angle
 
 
 class Target(pg.GraphicsObject):

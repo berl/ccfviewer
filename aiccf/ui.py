@@ -1,7 +1,172 @@
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui, QtCore
+import pyqtgraph.functions as fn
 from .signal import SignalBlock
+
+
+
+class AtlasSliceView(QtCore.QObject):
+    """A collection of user interface elements bound together:
+    
+    * One AtlasImageItems displaying an orthogonal view of the atlas
+    * An ROI object that defines the slice to be extracted from the orthogonal
+      view of the atlas
+    * A second AtlasImageItem that displays the sliced view
+    * A HistogramLUTItem used to control color/contrast in both images
+    * An AtlasDisplayCtrl that sets options for how all elements are drawn
+    * A LabelTree that is used to selectively color specific brain regions
+    """
+    
+    sig_slice_changed = QtCore.Signal()  # slice plane changed
+    sig_image_changed = QtCore.Signal()  # orthogonal image changed
+    mouseHovered = QtCore.Signal(object)
+    mouseClicked = QtCore.Signal(object)
+    
+    def __init__(self):
+        QtCore.QObject.__init__(self)
+
+        self.scale = None
+        self.atlas = None
+        self.label = None
+        self.interpolate = True
+        
+        self.img1 = AtlasImageItem()
+        self.img2 = AtlasImageItem()
+        self.img1.mouseHovered.connect(self.mouseHovered)
+        self.img2.mouseHovered.connect(self.mouseHovered)
+        
+        self.line_roi = RulerROI([.005, 0], [.008, 0], angle=90, pen=(0, 9), movable=False)
+        self.line_roi.sigRegionChanged.connect(self.updateSlice)
+
+        self.zslider = QtGui.QSlider(QtCore.Qt.Horizontal)
+        self.zslider.valueChanged.connect(self.updateImage)
+
+        self.slider = QtGui.QSlider(QtCore.Qt.Horizontal)
+        self.slider.valueChanged.connect(self.sliderRotation)
+        
+        self.lut = pg.HistogramLUTWidget()
+        self.lut.setImageItem(self.img1.atlasImg)
+        self.lut.sigLookupTableChanged.connect(self.histlutChanged)
+        self.lut.sigLevelsChanged.connect(self.histlutChanged)
+
+    def set_data(self, atlas, label, scale=None):
+        if np.isscalar(scale):
+            scale = (scale, scale)
+        self.atlas = atlas
+        self.label = label
+        if self.scale != scale:
+            self.scale = scale
+
+        self.zslider.setMaximum(atlas.shape[0])
+        self.zslider.setValue(atlas.shape[0] // 2)
+        self.slider.setRange(-45, 45)
+        self.slider.setValue(0)
+        self.updateImage()
+        self.updateSlice()
+        self.lut.setLevels(atlas.min(), atlas.max())
+
+    def updateImage(self):
+        z = self.zslider.value()
+        self.img1.setData(self.atlas[z], self.label[z], scale=self.scale)
+        self.sig_image_changed.emit()
+
+    def updateSlice(self):
+        rotation = self.slider.value()
+
+        if self.atlas is None:
+            return
+
+        if rotation == 0:
+            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, axes=(1, 2), order=int(self.interpolate))
+            label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, axes=(1, 2), order=0)
+        else:
+            atlas = self.line_roi.getArrayRegion(self.atlas, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=int(self.interpolate))
+            label = self.line_roi.getArrayRegion(self.label, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=0)
+
+        if atlas.size == 0:
+            return
+        
+        self.img2.setData(atlas, label, scale=self.scale)
+        self.sig_slice_changed.emit()
+        
+    def sliderRotation(self):
+        rotation = self.slider.value()
+        self.set_rotation_roi(self.img1.atlasImg, rotation)
+        self.updateSlice()
+
+    def close(self):
+        self.data = None
+
+    def setOverlay(self, o):
+        self.img1.setOverlay(o)
+        self.img2.setOverlay(o)
+
+    def setLabelOpacity(self, o):
+        self.img1.setLabelOpacity(o)
+        self.img2.setLabelOpacity(o)
+
+    def setInterpolation(self, interp):
+        assert isinstance(interp, bool)
+        self.interpolate = interp
+
+    def setLabelLUT(self, lut):
+        self.img1.setLUT(lut)
+        self.img2.setLUT(lut)
+
+    def histlutChanged(self):
+        # note: img1 is updated automatically; only bneed to update img2 to match
+        self.img2.atlasImg.setLookupTable(self.lut.getLookupTable(n=256))
+        self.img2.atlasImg.setLevels(self.lut.getLevels())
+
+    def set_rotation_roi(self, img, rotation):
+
+        h1, h2, h3, h4, h5 = self.line_roi.getHandles()
+
+        d_angle = pg.Point(h2.pos() - h1.pos())  # This gives the length in ccf coordinate size 
+        d = pg.Point(self.line_roi.mapToItem(img, h2.pos()) - self.line_roi.mapToItem(img, h1.pos()))
+
+        origin_roi = self.line_roi.mapToItem(img, h1.pos())
+
+        if rotation == 0:
+            offset = 0
+        else:
+            offset = self.get_offset(rotation)
+        
+        # This calculates by how much the ROI needs to shift
+        if d.angle(pg.Point(1, 0)) == 90.0:
+            # when ROI is on a 90 degree angle, can't really calculate using a right-angle triangle, ugh
+            hyp, opposite, adjacent = offset * self.scale[0], 0, offset * self.scale[0]
+        else:
+            hyp = (offset * self.scale[0])
+            opposite = (np.sin(np.radians(-(90 - d.angle(pg.Point(1, 0)))))) * hyp
+            adjacent = opposite / (np.tan(np.radians(-(90 - d.angle(pg.Point(1, 0))))))
+        
+        # This is kind of a hack to avoid recursion error. Using update=False doesn't move the handles.
+        self.line_roi.sigRegionChanged.disconnect(self.updateSlice)  
+        # increase size to denote rotation
+        self.line_roi.setSize(pg.Point(d_angle.length(), hyp * 2))
+        # Shift position in order to keep the cutting axis in the middle
+        self.line_roi.setPos(pg.Point((origin_roi.x() * self.scale[-1]) + adjacent, (origin_roi.y() * self.scale[-1]) + opposite))
+        self.line_roi.sigRegionChanged.connect(self.updateSlice)
+
+    def get_offset(self, rotation):
+        theta = np.radians(-rotation)
+
+        # Figure out the unit vector with theta angle
+        x, z = 0, 1
+        dc, ds = np.cos(theta), np.sin(theta)
+        xv = dc * x - ds * z
+        zv = ds * x + dc * z
+
+        # Figure out the slope of the unit vector
+        m = zv / xv
+
+        # y = mx + b
+        # Calculate the x-intercept. using half the distance in the z-dimension as b. Since we want the axis of rotation in the middle
+        offset = (-self.atlas.shape[0] / 2) / m
+
+        return abs(offset)
 
 
 class AtlasDisplayCtrl(pg.parametertree.ParameterTree):
@@ -223,3 +388,159 @@ class AtlasImageItem(QtGui.QGraphicsItemGroup):
 
     def shape(self):
         return self.labelImg.shape()
+
+
+class RulerROI(pg.ROI):
+    """
+    ROI subclass with one rotate handle, one scale-rotate handle and one translate handle. Rotate handles handles define a line. 
+    
+    ============== =============================================================
+    **Arguments**
+    positions      (list of two length-2 sequences) 
+    \**args        All extra keyword arguments are passed to ROI()
+    ============== =============================================================
+    """
+    
+    def __init__(self, pos, size, **args):
+        pg.ROI.__init__(self, pos, size, **args)
+        self.ab_vector = (0, 0, 0)  # This is the vector pointing up/down from the origin
+        self.ac_vector = (0, 0, 0)  # This is the vector pointing across form the orign
+        self.origin = (0, 0, 0)     # This is the origin
+        self.ab_angle = 90  # angle on the ab_vector
+        self.ac_angle = 0   # angle of the ac_vector 
+        self.addRotateHandle([0, 0.5], [1, 1])
+        self.addScaleRotateHandle([1, 0.5], [0.5, 0.5])
+        self.addTranslateHandle([0.5, 0.5])
+        self.addFreeHandle([0, 1], [0, 0])  
+        self.addFreeHandle([0, 0], [0, 0])
+        self.newRoi = pg.ROI((0, 0), [1, 5], parent=self, pen=pg.mkPen('w', style=QtCore.Qt.DotLine))
+
+    def paint(self, p, *args):
+        pg.ROI.paint(self, p, *args)
+        h1 = self.handles[0]['item'].pos()
+        h2 = self.handles[1]['item'].pos()
+        h4 = self.handles[3]['item'] 
+        h5 = self.handles[4]['item'] 
+        h4.setVisible(False)
+        h5.setVisible(False)
+        p1 = p.transform().map(h1)
+        p2 = p.transform().map(h2)
+
+        vec = pg.Point(h2) - pg.Point(h1)
+        length = vec.length()
+
+        pvec = p2 - p1
+        pvecT = pg.Point(pvec.y(), -pvec.x())
+        pos = 0.5 * (p1 + p2) + pvecT * 40 / pvecT.length()
+
+        angle = pg.Point(1, 0).angle(pg.Point(pvec)) 
+        self.ab_angle = angle
+        
+        # Overlay a line to signal which side of the ROI is the back.
+        if self.ac_angle > 0:
+            self.newRoi.setVisible(True)
+            self.newRoi.setPos(h5.pos())
+        elif self.ac_angle < 0:
+            self.newRoi.setVisible(True)
+            self.newRoi.setPos(h4.pos())
+        else:
+            self.newRoi.setVisible(False)
+            
+        self.newRoi.setSize(pg.Point(self.size()[0], 0))
+        
+        p.resetTransform()
+
+        txt = pg.siFormat(length, suffix='m') + '\n%0.1f deg' % angle + '\n%0.1f deg' % self.ac_angle
+        p.drawText(QtCore.QRectF(pos.x() - 50, pos.y() - 50, 100, 100), QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter, txt)
+
+    def boundingRect(self):
+        r = pg.ROI.boundingRect(self)
+        pxw = 50 * self.pixelLength(pg.Point([1, 0]))
+        return r.adjusted(-50, -50, 50, 50)
+
+    def getArrayRegion(self, data, img, axes=(0, 1), order=1, rotation=0, **kwds):
+
+        imgPts = [self.mapToItem(img, h.pos()) for h in self.getHandles()]
+
+        d = pg.Point(imgPts[1] - imgPts[0]) # This is the xy direction vector
+        o = pg.Point(imgPts[0])
+       
+        if rotation != 0:
+            ac_vector, ac_vector_length, origin = self.get_affine_slice_params(data, img, rotation)
+            rgn = fn.affineSlice(data, shape=(int(ac_vector_length), int(d.length())), vectors=[ac_vector, (d.norm().x(), d.norm().y(), 0)],
+                                 origin=origin, axes=axes, order=order, **kwds) 
+            
+            # Save vector and origin
+            self.origin = origin
+            self.ac_vector = ac_vector * ac_vector_length
+        else:
+            rgn = fn.affineSlice(data, shape=(int(d.length()),), vectors=[pg.Point(d.norm())], origin=o, axes=axes, order=order, **kwds)
+            # Save vector and origin
+            self.ac_vector = (0, 0, data.shape[0])
+            self.origin = (o.x(), o.y(), 0.0) 
+        
+        # save this as well
+        self.ab_vector = (d.x(), d.y(), 0)
+        self.ac_angle = rotation
+        
+        return rgn
+
+    def get_affine_slice_params(self, data, img, rotation):
+        """
+        Use the position of this ROI handles to get a new vector for the slice view's x-z direction.
+        """
+        counter_clockwise = rotation < 0
+        
+        h1, h2, h3, h4, h5 = self.getHandles()
+        origin_roi = self.mapToItem(img, h5.pos())
+        left_corner = self.mapToItem(img, h4.pos())
+        
+        if counter_clockwise:
+            origin = np.array([origin_roi.x(), origin_roi.y(), 0])
+            end_point = np.array([left_corner.x(), left_corner.y(), data.shape[0]])
+        else:
+            origin = np.array([left_corner.x(), left_corner.y(), 0])
+            end_point = np.array([origin_roi.x(), origin_roi.y(), data.shape[0]])
+
+        new_vector = end_point - origin
+        ac_vector_length = np.sqrt(new_vector.dot(new_vector))
+        
+        return (new_vector[0], new_vector[1], new_vector[2]) / ac_vector_length, ac_vector_length, (origin[0], origin[1], origin[2])
+    
+    def get_roi_size(self, ab_vector, ac_vector):
+        """
+        Returns the size of the ROI expected from the given vectors.
+        """
+        # Find the width
+        w = pg.Point(ab_vector[0], ab_vector[1]) 
+    
+        # Find the length
+        l = pg.Point(ac_vector[0], ac_vector[1])
+        
+        return w.length(), l.length()
+    
+    def get_ab_angle(self, with_ab_vector=None):
+        """
+        Gets ROI.ab_angle. If with_ab_vector is given, then the angle returned is with respect to the given vector 
+        """
+        if with_ab_vector is not None:
+            corner = pg.Point(with_ab_vector[0], with_ab_vector[1])
+            return corner.angle(pg.Point(1, 0))
+        else:
+            return self.ab_angle
+        
+    def get_ac_angle(self, with_ac_vector=None):
+        """
+        Gets ROI.ac_angle. If with_ac_vector is given, then the angle returned is with respect to the given vector 
+        """
+        if with_ac_vector is not None:
+            l = pg.Point(with_ac_vector[0], with_ac_vector[1])  # Explain this. 
+            corner = pg.Point(l.length(), with_ac_vector[2])
+            
+            if with_ac_vector[0] < 0:  # Make sure this points to the correct direction 
+                corner = pg.Point(-l.length(), with_ac_vector[2])
+            
+            return pg.Point(0, 1).angle(corner)
+        else:
+            return self.ac_angle
+
