@@ -13,7 +13,7 @@ import math
 import points_to_aff
 
 from aiccf.data import CCFAtlasData
-from aiccf.ui import AtlasDisplayCtrl, LabelTree
+from aiccf.ui import AtlasDisplayCtrl, LabelTree, AtlasImageItem
 
 
 class AtlasViewer(QtGui.QWidget):
@@ -409,8 +409,8 @@ class VolumeSliceView(QtGui.QWidget):
         self.layout.addWidget(self.w1, 0, 0)
         self.layout.addWidget(self.w2, 1, 0)
 
-        self.img1 = LabelImageItem()
-        self.img2 = LabelImageItem()
+        self.img1 = AtlasImageItem()
+        self.img2 = AtlasImageItem()
         self.img1.mouseHovered.connect(self.mouseHovered)
         self.img2.mouseHovered.connect(self.mouseHovered)
         self.img2.mouseClicked.connect(self.mouseClicked)
@@ -594,71 +594,6 @@ class VolumeSliceView(QtGui.QWidget):
     def setInterpolation(self, interp):
         assert isinstance(interp, bool)
         self.interpolate = interp
-
-
-class LabelImageItem(QtGui.QGraphicsItemGroup):
-    class SignalProxy(QtCore.QObject):
-        mouseHovered = QtCore.Signal(object)  # id
-        mouseClicked = QtCore.Signal(object)  # id
-
-    def __init__(self):
-        self._sigprox = LabelImageItem.SignalProxy()
-        self.mouseHovered = self._sigprox.mouseHovered
-        self.mouseClicked = self._sigprox.mouseClicked
-
-        QtGui.QGraphicsItemGroup.__init__(self)
-        self.atlasImg = pg.ImageItem(levels=[0,1])
-        self.labelImg = pg.ImageItem()
-        self.atlasImg.setParentItem(self)
-        self.labelImg.setParentItem(self)
-        self.labelImg.setZValue(10)
-        self.labelImg.setOpacity(0.5)
-        self.setOverlay('Multiply')
-
-        self.labelColors = {}
-        self.setAcceptHoverEvents(True)
-
-    def setData(self, atlas, label, scale=None):
-        self.labelData = label
-        self.atlasData = atlas
-        if scale is not None:
-            self.resetTransform()
-            self.scale(*scale)
-        self.atlasImg.setImage(self.atlasData, autoLevels=False)
-        self.labelImg.setImage(self.labelData, autoLevels=False)  
-
-    def setLUT(self, lut):
-        self.labelImg.setLookupTable(lut)
-
-    def setOverlay(self, overlay):
-        mode = getattr(QtGui.QPainter, 'CompositionMode_' + overlay)
-        self.labelImg.setCompositionMode(mode)
-
-    def setLabelOpacity(self, o):
-        self.labelImg.setOpacity(o)
-
-    def setLabelColors(self, colors):
-        self.labelColors = colors
-
-    def hoverEvent(self, event):
-        if event.isExit():
-            return
-
-        try:
-            id = self.labelData[int(event.pos().x()), int(event.pos().y())]
-        except IndexError, AttributeError:
-            return
-        self.mouseHovered.emit(id)
-
-    def mouseClickEvent(self, event):
-        id = self.labelData[int(event.pos().x()), int(event.pos().y())]
-        self.mouseClicked.emit([event, id])
-
-    def boundingRect(self):
-        return self.labelImg.boundingRect()
-
-    def shape(self):
-        return self.labelImg.shape()
 
 
 class RulerROI(pg.ROI):
@@ -853,10 +788,6 @@ class Target(pg.GraphicsObject):
         p.drawEllipse(r)
         p.drawLine(pg.Point(-w*2, 0), pg.Point(w*2, 0))
         p.drawLine(pg.Point(0, -h*2), pg.Point(0, h*2))
-
-
-    
-
 
 
 def displayError(error):

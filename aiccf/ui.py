@@ -83,7 +83,6 @@ class LabelTree(QtGui.QWidget):
         self.labelsByAcronym[acronym] = self.labelsById[id]
 
         btn.sigColorChanged.connect(self.itemColorChanged)
-        # btn.sigColorChanging.connect(self.imageChanged)
 
     def itemChange(self, item, col):
         checked = item.checkState(0) == QtCore.Qt.Checked
@@ -159,3 +158,68 @@ class LabelTree(QtGui.QWidget):
             descr.insert(0, str(item.text(0)))
             item = item.parent()
         return ' > '.join(descr) + "  :  " + name
+
+
+class AtlasImageItem(QtGui.QGraphicsItemGroup):
+    class SignalProxy(QtCore.QObject):
+        mouseHovered = QtCore.Signal(object)  # id
+        mouseClicked = QtCore.Signal(object)  # id
+
+    def __init__(self):
+        self._sigprox = AtlasImageItem.SignalProxy()
+        self.mouseHovered = self._sigprox.mouseHovered
+        self.mouseClicked = self._sigprox.mouseClicked
+
+        QtGui.QGraphicsItemGroup.__init__(self)
+        self.atlasImg = pg.ImageItem(levels=[0,1])
+        self.labelImg = pg.ImageItem()
+        self.atlasImg.setParentItem(self)
+        self.labelImg.setParentItem(self)
+        self.labelImg.setZValue(10)
+        self.labelImg.setOpacity(0.5)
+        self.setOverlay('Multiply')
+
+        self.labelColors = {}
+        self.setAcceptHoverEvents(True)
+
+    def setData(self, atlas, label, scale=None):
+        self.labelData = label
+        self.atlasData = atlas
+        if scale is not None:
+            self.resetTransform()
+            self.scale(*scale)
+        self.atlasImg.setImage(self.atlasData, autoLevels=False)
+        self.labelImg.setImage(self.labelData, autoLevels=False)  
+
+    def setLUT(self, lut):
+        self.labelImg.setLookupTable(lut)
+
+    def setOverlay(self, overlay):
+        mode = getattr(QtGui.QPainter, 'CompositionMode_' + overlay)
+        self.labelImg.setCompositionMode(mode)
+
+    def setLabelOpacity(self, o):
+        self.labelImg.setOpacity(o)
+
+    def setLabelColors(self, colors):
+        self.labelColors = colors
+
+    def hoverEvent(self, event):
+        if event.isExit():
+            return
+
+        try:
+            id = self.labelData[int(event.pos().x()), int(event.pos().y())]
+        except IndexError, AttributeError:
+            return
+        self.mouseHovered.emit(id)
+
+    def mouseClickEvent(self, event):
+        id = self.labelData[int(event.pos().x()), int(event.pos().y())]
+        self.mouseClicked.emit([event, id])
+
+    def boundingRect(self):
+        return self.labelImg.boundingRect()
+
+    def shape(self):
+        return self.labelImg.shape()
