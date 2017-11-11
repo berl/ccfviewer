@@ -9,11 +9,11 @@ from pyqtgraph.Qt import QtGui, QtCore
 class CCFAtlasData(object):
     
     #image_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_{resolution}.nrrd"
-    #label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/average_template_{resolution}.nrrd"
+    #label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/annotation_{resolution}.nrrd"
     #ontology_url = "http://api.brain-map.org/api/v2/structure_graph_download/1.json"
     
     image_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/average_template_{resolution}.nrrd"
-    label_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/average_template_{resolution}.nrrd"
+    label_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/annotation_{resolution}.nrrd"
     ontology_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/ontology.json"
     
     def __init__(self, cache_path=None, resolution=None):
@@ -33,8 +33,8 @@ class CCFAtlasData(object):
         # Have we already cached some resolutions of the atlas?
         self.cached_resolutions = {}
         for res in self.available_resolutions:
-            image_file = os.path.join(cache_path, '%dum'%res, 'ccf_image.ma')
-            label_file = os.path.join(cache_path, '%dum'%res, 'ccf_label.ma')
+            image_file = os.path.join(cache_path, '%dum'%res, 'image.ma')
+            label_file = os.path.join(cache_path, '%dum'%res, 'label.ma')
             if os.path.isfile(image_file) and os.path.isfile(label_file):
                 self.cached_resolutions[res] = (image_file, label_file)
         
