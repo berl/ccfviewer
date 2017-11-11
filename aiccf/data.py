@@ -5,17 +5,16 @@ import pyqtgraph as pg
 from pyqtgraph import metaarray
 from pyqtgraph.Qt import QtGui, QtCore
 
-if sys.version[0] > 2:
-    from urllib.request import urlopen
-else:
-    from urllib import urlopen
-
 
 class CCFAtlasData(object):
     
-    image_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_{resolution}.nrrd"
-    label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/average_template_{resolution}.nrrd"
-    ontology_url = "http://api.brain-map.org/api/v2/structure_graph_download/1.json"
+    #image_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_{resolution}.nrrd"
+    #label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/average_template_{resolution}.nrrd"
+    #ontology_url = "http://api.brain-map.org/api/v2/structure_graph_download/1.json"
+    
+    image_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/average_template_{resolution}.nrrd"
+    label_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/average_template_{resolution}.nrrd"
+    ontology_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/ontology.json"
     
     def __init__(self, cache_path=None, resolution=None):
         self.image = None
@@ -36,7 +35,7 @@ class CCFAtlasData(object):
         for res in self.available_resolutions:
             image_file = os.path.join(cache_path, '%dum'%res, 'ccf_image.ma')
             label_file = os.path.join(cache_path, '%dum'%res, 'ccf_label.ma')
-            if if os.path.isfile(image_file) and os.path.isfile(label_file):
+            if os.path.isfile(image_file) and os.path.isfile(label_file):
                 self.cached_resolutions[res] = (image_file, label_file)
         
         # Which resolution to load?
@@ -59,7 +58,7 @@ class CCFAtlasData(object):
         folder.
         """
         if resolution is None:
-            from .ui import AtlasResolutionDialog
+            from .ui import AtlasResolutionDialog, download
             dlg = AtlasResolutionDialog(self.available_resolutions, self.cached_resolutions.keys())
             dlg.exec_()
             resolution = dlg.selected_resolution()
@@ -67,9 +66,10 @@ class CCFAtlasData(object):
                 raise Exception("No atlas resolution selected.")
 
         cache_path = self.cache_path(resolution)
-        os.makedirs(cache_path)
+        if not os.path.exists(cache_path):
+            os.makedirs(cache_path)
         
-        with pg.ProgressDialog("Preparing %dum CCF data", maximum=6, nested=True) as dlg: 
+        with pg.ProgressDialog("Preparing %dum CCF data" % resolution, maximum=6, nested=True) as dlg: 
             image_url = self.image_url.format(resolution=resolution)
             image_file = os.path.join(cache_path, image_url.split('/')[-1])
             image_cache = os.path.join(cache_path, "image.ma")
@@ -85,15 +85,18 @@ class CCFAtlasData(object):
             onto_file = os.path.join(cache_path, 'ontology.json')
             download(self.ontology_url, onto_file)
             
-            atlas_data.load_image_data(image_file)
+            self.load_image_data(image_file)
             dlg += 1
             writeFile(self.image, image_cache)
             dlg += 1
             
-            atlas_data.load_label_data(label_file, onto_file)
+            self.load_label_data(label_file, onto_file)
             dlg += 1
-            writeFile(self.image, label_cache)
+            writeFile(self.label, label_cache)
             dlg += 1
+
+        self.cached_resolutions[resolution] = (image_cache, label_cache)
+        return resolution
 
     def cache_path(self, resolution):
         return os.path.join(self._cache_path, '%dum'%resolution)

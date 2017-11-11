@@ -1,9 +1,14 @@
+import os, sys
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph.functions as fn
 from .signal import SignalBlock
 
+if sys.version[0] > '2':
+    from urllib.request import urlopen
+else:
+    from urllib import urlopen
 
 
 class AtlasSliceView(QtCore.QObject):
@@ -604,6 +609,8 @@ class RulerROI(pg.ROI):
 class AtlasResolutionDialog(QtGui.QDialog):
     def __init__(self, resolutions, cached):
         QtGui.QDialog.__init__(self)
+        self.setWindowTitle("Select CCF resolution to download")
+        self.resize(400, 200)
         self.layout = QtGui.QGridLayout()
         self.setLayout(self.layout)
         self.radios = {}
@@ -664,5 +671,5 @@ def download(url, dest, chunksize=1000000):
                     raise Exception("User cancelled download.")
             os.rename(tmpdst, dest)
         finally:
-            if os.path.isfile(tmpdst)
+            if os.path.isfile(tmpdst):
                 os.remove(tmpdst)
