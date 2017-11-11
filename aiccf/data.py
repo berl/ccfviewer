@@ -3,31 +3,100 @@ from collections import OrderedDict
 import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import metaarray
+from pyqtgraph.Qt import QtGui, QtCore
+
+if sys.version[0] > 2:
+    from urllib.request import urlopen
+else:
+    from urllib import urlopen
 
 
 class CCFAtlasData(object):
-    def __init__(self, image_cache_file=None, label_cache_file=None):
+    
+    image_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_{resolution}.nrrd"
+    label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/average_template_{resolution}.nrrd"
+    ontology_url = "http://api.brain-map.org/api/v2/structure_graph_download/1.json"
+    
+    def __init__(self, cache_path=None, resolution=None):
         self.image = None
         self.label = None
         self.ontology = None
+        self.available_resolutions = [10, 25, 50, 100]
         
-        if sys.platform == 'win32':
-            cache_path = os.path.join(os.getenv("APPDATA"), 'aiccf')
-        else:
-            cache_path = os.path.join(os.path.expanduser("~"), ".local", "share", 'aiccf')
-            
-        if image_cache_file is None:
-            image_cache_file = os.path.join(cache_path, 'ccf_image.ma')
-        if label_cache_file is None:
-            label_cache_file = os.path.join(cache_path, 'ccf_label.ma')
-        self._image_cache_file = image_cache_file
-        self._label_cache_file = label_cache_file
+        # Decide on a default cache path
+        if cache_path is None:
+            if sys.platform == 'win32':
+                cache_path = os.path.join(os.getenv("APPDATA"), 'aiccf')
+            else:
+                cache_path = os.path.join(os.path.expanduser("~"), ".local", "share", 'aiccf')
+        self._cache_path = cache_path
         
-        if os.path.exists(image_cache_file):
-            self.load_image_cache()
+        # Have we already cached some resolutions of the atlas?
+        self.cached_resolutions = {}
+        for res in self.available_resolutions:
+            image_file = os.path.join(cache_path, '%dum'%res, 'ccf_image.ma')
+            label_file = os.path.join(cache_path, '%dum'%res, 'ccf_label.ma')
+            if if os.path.isfile(image_file) and os.path.isfile(label_file):
+                self.cached_resolutions[res] = (image_file, label_file)
+        
+        # Which resolution to load?
+        if resolution is None:
+            if len(self.cached_resolutions) == 0:
+                # offer to download and cache 
+                resolution = self.download_and_cache()
+            else:
+                # by default, pick the highest resolution that has already been cached
+                resolution = min(self.cached_resolutions.keys())
+        elif resolution not in self.cached_resolutions:
+            resolution = self.download_and_cache(resolution)
             
-        if os.path.exists(label_cache_file):
-            self.load_label_cache()
+        self._image_cache_file, self._label_cache_file = self.cached_resolutions[resolution]
+        self.load_image_cache()
+        self.load_label_cache()
+
+    def download_and_cache(self, resolution=None):
+        """Download atlas data, convert to intermediate format, and store in cache
+        folder.
+        """
+        if resolution is None:
+            from .ui import AtlasResolutionDialog
+            dlg = AtlasResolutionDialog(self.available_resolutions, self.cached_resolutions.keys())
+            dlg.exec_()
+            resolution = dlg.selected_resolution()
+            if resolution is None:
+                raise Exception("No atlas resolution selected.")
+
+        cache_path = self.cache_path(resolution)
+        os.makedirs(cache_path)
+        
+        with pg.ProgressDialog("Preparing %dum CCF data", maximum=6, nested=True) as dlg: 
+            image_url = self.image_url.format(resolution=resolution)
+            image_file = os.path.join(cache_path, image_url.split('/')[-1])
+            image_cache = os.path.join(cache_path, "image.ma")
+            download(image_url, image_file)
+            dlg += 1
+            
+            label_url = self.label_url.format(resolution=resolution)
+            label_file = os.path.join(cache_path, label_url.split('/')[-1])
+            label_cache = os.path.join(cache_path, "label.ma")
+            download(label_url, label_file)
+            dlg += 1
+            
+            onto_file = os.path.join(cache_path, 'ontology.json')
+            download(self.ontology_url, onto_file)
+            
+            atlas_data.load_image_data(image_file)
+            dlg += 1
+            writeFile(self.image, image_cache)
+            dlg += 1
+            
+            atlas_data.load_label_data(label_file, onto_file)
+            dlg += 1
+            writeFile(self.image, label_cache)
+            dlg += 1
+
+    def cache_path(self, resolution):
+        return os.path.join(self._cache_path, '%dum'%resolution)
 
     @property
     def shape(self):
@@ -35,12 +104,10 @@ class CCFAtlasData(object):
 
     def load_image_data(self, filename):
         self.image = read_nrrd_atlas(filename)
-        writeFile(self.image, self._image_cache_file)
         
     def load_label_data(self, label_file, ontology_file):
         self.label = read_nrrd_labels(label_file, ontology_file)
         self.ontology = self.label._info[-1]['ontology']
-        writeFile(self.label, self._label_cache_file)
         
     def load_image_cache(self):
         """Load a MetaArray-format atlas image file.
@@ -115,7 +182,7 @@ def read_nrrd_labels(nrrdFile, ontologyFile):
 
     import nrrd
 
-    with pg.ProgressDialog("Loading annotation file...", 0, 5, wait=0) as dlg:
+    with pg.ProgressDialog("Loading annotation file...", 0, 5, wait=0, nested=True) as dlg:
         print "Loading annotation file..."
         pg.QtGui.QApplication.processEvents()
         # Read ontology and convert to flat table
@@ -157,7 +224,7 @@ def read_nrrd_labels(nrrdFile, ontologyFile):
         mapping[i] = i
         inds.add(i)
    
-    with pg.ProgressDialog("Remapping annotations to 16-bit (please be patient with me; this can take several minutes) ...", 0, (~mask).sum(), wait=0) as dlg:
+    with pg.ProgressDialog("Remapping annotations to 16-bit (please be patient with me; this can take several minutes) ...", 0, (~mask).sum(), wait=0, nested=True) as dlg:
         pg.QtGui.QApplication.processEvents()
         for i in u[~mask]:
             while next_id in inds:

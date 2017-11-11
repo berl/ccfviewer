@@ -600,3 +600,69 @@ class RulerROI(pg.ROI):
         else:
             return self.ac_angle
 
+
+class AtlasResolutionDialog(QtGui.QDialog):
+    def __init__(self, resolutions, cached):
+        QtGui.QDialog.__init__(self)
+        self.layout = QtGui.QGridLayout()
+        self.setLayout(self.layout)
+        self.radios = {}
+        for i,res in enumerate(resolutions):
+            if res in cached:
+                extra = " (already cached)"
+            else:
+                extra = ""
+            r = QtGui.QRadioButton("%d um%s" % (res, extra))
+            self.layout.addWidget(r, i, 0, 1, 2)
+            self.radios[res] = r
+            r.resolution = res
+        self.ok_btn = QtGui.QPushButton('Download')
+        self.layout.addWidget(self.ok_btn, 4, 0)
+        self.cancel_btn = QtGui.QPushButton('Cancel')
+        self.layout.addWidget(self.cancel_btn, 4, 1)
+        self.ok_btn.clicked.connect(self.ok_clicked)
+        self.cancel_btn.clicked.connect(self.reject)
+        for r in self.radios.values():
+            r.toggled.connect(self.ok_btn.setEnabled)
+
+    def exec_(self):
+        self.ok_btn.setEnabled(False)
+        QtGui.QDialog.exec_(self)
+
+    def selected_resolution(self):
+        for r in self.radios.values():
+            if r.isChecked():
+                return r.resolution
+        return None
+
+    def ok_clicked(self):
+        if self.selected_resolution() is None:
+            self.reject()
+        else:
+            self.accept()
+
+
+def download(url, dest, chunksize=1000000):
+    """Download a file from *url* and save it to *dest*, while displaying a
+    progress bar.
+    """
+    req = urlopen(url)
+    size = int(req.info()['content-length'])
+    tmpdst = dest+'.partial'
+    fh = open(tmpdst, 'wb')
+    with pg.ProgressDialog("Downloading\n%s" % url, maximum=size, nested=True) as dlg:
+        try:
+            tot = 0
+            while True:
+                chunk = req.read(chunksize)
+                if chunk == '':
+                    break
+                fh.write(chunk)
+                tot += len(chunk)
+                dlg.setValue(tot)
+                if dlg.wasCanceled():
+                    raise Exception("User cancelled download.")
+            os.rename(tmpdst, dest)
+        finally:
+            if os.path.isfile(tmpdst)
+                os.remove(tmpdst)
