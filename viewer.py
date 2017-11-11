@@ -8,11 +8,10 @@ import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.metaarray as metaarray
 from pyqtgraph.Qt import QtGui, QtCore
-import math
-import points_to_aff
 
 from aiccf.data import CCFAtlasData
 from aiccf.ui import AtlasDisplayCtrl, LabelTree, AtlasSliceView
+from aiccf import points_to_aff
 
 
 class AtlasViewer(QtGui.QWidget):
