@@ -453,7 +453,8 @@ if __name__ == '__main__':
     v.setWindowTitle('CCF Viewer')
     v.show()
 
-    atlas_data = CCFAtlasData()
+    resolution = int(sys.argv[1]) if len(sys.argv) == 2 else None
+    atlas_data = CCFAtlasData(resolution=resolution)
     
     v.set_data(atlas_data)
 
