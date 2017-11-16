@@ -145,11 +145,13 @@ class AtlasSliceView(QtCore.QObject):
         self.img2.setData(atlas, label, scale=self.scale)
         self.sig_slice_changed.emit()
         
-        w = self.img2.atlasImg.scene().views()
-        if len(w) > 0:
-            # repaint immediately to avoid processing more mouse events before next repaint
-            w[0].viewport().repaint()
-            #w[0].viewport().repaint()
+        scene = self.img2.atlasImg.scene()
+        if scene is not None:
+            w = scene.views()
+            if len(w) > 0:
+                # repaint immediately to avoid processing more mouse events before next repaint
+                w[0].viewport().repaint()
+                #w[0].viewport().repaint()
         
     def angle_slider_changed(self):
         rotation = self.angle_slider.value()
@@ -516,7 +518,10 @@ class RulerROI(pg.ROI):
 
     def boundingRect(self):
         r = pg.ROI.boundingRect(self)
-        pxw = 50 * self.pixelLength(pg.Point([1, 0]))
+        pxl = self.pixelLength(pg.Point([1, 0]))
+        if pxl is None:
+            return r
+        pxw = 50 * pxl
         return r.adjusted(-50, -50, 50, 50)
 
     def getArrayRegion(self, data, img, axes=(0, 1), order=1, rotation=0, **kwds):
@@ -654,7 +659,8 @@ def download(url, dest, chunksize=1000000):
     progress bar.
     """
     req = urlopen(url)
-    size = int(req.info()['content-length'])
+    size = req.info().get('content-length')
+    size = 0 if size is None else int(size)
     tmpdst = dest+'.partial'
     fh = open(tmpdst, 'wb')
     with pg.ProgressDialog("Downloading\n%s" % url, maximum=size, nested=True) as dlg:

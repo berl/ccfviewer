@@ -4,17 +4,14 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import metaarray
 from pyqtgraph.Qt import QtGui, QtCore
+from .ui import AtlasResolutionDialog, download
 
 
 class CCFAtlasData(object):
     
-    #image_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_{resolution}.nrrd"
-    #label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/annotation_{resolution}.nrrd"
-    #ontology_url = "http://api.brain-map.org/api/v2/structure_graph_download/1.json"
-    
-    image_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/average_template_{resolution}.nrrd"
-    label_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/annotation_{resolution}.nrrd"
-    ontology_url = "file:///home/luke/work/allen_inst/ccf/ccfviewer/raw_data/ontology.json"
+    image_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_{resolution}.nrrd"
+    label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/annotation_{resolution}.nrrd"
+    ontology_url = "http://api.brain-map.org/api/v2/structure_graph_download/1.json"
     
     def __init__(self, cache_path=None, resolution=None):
         self.image = None
@@ -58,7 +55,6 @@ class CCFAtlasData(object):
         folder.
         """
         if resolution is None:
-            from .ui import AtlasResolutionDialog, download
             dlg = AtlasResolutionDialog(self.available_resolutions, self.cached_resolutions.keys())
             dlg.exec_()
             resolution = dlg.selected_resolution()
