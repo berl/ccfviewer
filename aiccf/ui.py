@@ -369,8 +369,7 @@ class LabelTree(QtGui.QWidget):
             if ', layer' in name.lower():
                 layer = name.split(' ')[-1]
                 layer = {'1': 0, '2': 1, '2/3': 2, '4': 3, '5': 4, '6a': 5, '6b': 6}[layer]
-                btn = self.labels_by_id[root.id]['btn']
-                btn.setColor(pg.intColor(layer, 10))
+                self.set_label_color(root.id, pg.intColor(layer, 10), recursive=False, emit=False)
 
             for i in range(root.childCount()):
                 self.color_by_layer(root.child(i))
@@ -383,7 +382,7 @@ class LabelTree(QtGui.QWidget):
         try:
             self.blockSignals(True)
             for k,v in self.labels_by_id.items():
-                v['btn'].setColor(pg.mkColor(v['btn'].defaultColor))
+                self.set_label_color(k, v['btn'].defaultColor, recursive=False, emit=False)
         finally:
             self.blockSignals(False)
             self.labels_changed.emit()
