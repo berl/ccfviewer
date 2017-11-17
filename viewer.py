@@ -86,23 +86,23 @@ class AtlasViewer(QtGui.QWidget):
 
         self.ctrl = QtGui.QWidget(parent=self)
         self.splitter.addWidget(self.ctrl)
-        self.ctrlLayout = QtGui.QVBoxLayout()
-        self.ctrl.setLayout(self.ctrlLayout)
+        self.ctrl_layout = QtGui.QVBoxLayout()
+        self.ctrl.setLayout(self.ctrl_layout)
 
-        self.ctrlLayout.addWidget(self.atlas_view.displayCtrl)
-        self.ctrlLayout.addWidget(self.atlas_view.labelTree)
+        self.ctrl_layout.addWidget(self.atlas_view.display_ctrl)
+        self.ctrl_layout.addWidget(self.atlas_view.label_tree)
         
         self.coordinateCtrl = CoordinatesCtrl(self)
         self.coordinateCtrl.coordinateSubmitted.connect(self.coordinateSubmitted)
-        self.ctrlLayout.addWidget(self.coordinateCtrl)
+        self.ctrl_layout.addWidget(self.coordinateCtrl)
 
     def set_data(self, atlas_data):
         self.atlas_view.set_data(atlas_data)
-        self.view1.autoRange(items=[self.img1.atlasImg])
+        self.view1.autoRange(items=[self.img1.atlas_img])
         self.coordinateCtrl.atlas_shape = atlas_data.shape
         
     def mouseHovered(self, id):
-        self.statusLabel.setText(self.atlas_view.labelTree.describe(id))
+        self.statusLabel.setText(self.atlas_view.label_tree.describe(id))
         
     def renderVolume(self):
         import pyqtgraph.opengl as pgl
@@ -326,7 +326,7 @@ class AtlasViewer(QtGui.QWidget):
         self.atlas_view.line_roi.setPos((self.atlas_view.line_roi.pos().x() - .0001, self.atlas_view.line_roi.pos().y()))
 
     def sliceChanged(self):
-        self.view2.autoRange(items=[self.img2.atlasImg])
+        self.view2.autoRange(items=[self.img2.atlas_img])
         self.target.setVisible(False)
     
     def closeEvent(self, ev):

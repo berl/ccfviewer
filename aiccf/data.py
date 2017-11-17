@@ -8,6 +8,9 @@ from .ui import AtlasResolutionDialog, download
 
 
 class CCFAtlasData(object):
+    """Wrapper around CCF average image, annotation, and ontology to manage
+    downloading, reformatting, and caching.
+    """
     
     image_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/average_template/average_template_{resolution}.nrrd"
     label_url = "http://download.alleninstitute.org/informatics-archive/current-release/mouse_ccf/annotation/ccf_2016/annotation_{resolution}.nrrd"
@@ -83,12 +86,12 @@ class CCFAtlasData(object):
             
             self.load_image_data(image_file)
             dlg += 1
-            writeFile(self.image, image_cache)
+            write_file(self.image, image_cache)
             dlg += 1
             
             self.load_label_data(label_file, onto_file)
             dlg += 1
-            writeFile(self.label, label_cache)
+            write_file(self.label, label_cache)
             dlg += 1
 
         self.cached_resolutions[resolution] = (image_cache, label_cache)
@@ -260,10 +263,10 @@ def parse_ontology(root, parent=-1):
     return ont
 
 
-def writeFile(data, filename):
-    dataDir = os.path.dirname(filename)
-    if dataDir != '' and not os.path.exists(dataDir):
-        os.makedirs(dataDir)
+def write_file(data, filename):
+    data_dir = os.path.dirname(filename)
+    if data_dir != '' and not os.path.exists(data_dir):
+        os.makedirs(data_dir)
 
     tmp = filename + '.tmp'
     if max(data.shape) > 200 and min(data.shape) > 200:

@@ -53,28 +53,28 @@ class AtlasSliceView(QtCore.QObject):
         self.angle_slider.valueChanged.connect(self.angle_slider_changed)
         
         self.lut = pg.HistogramLUTWidget()
-        self.lut.setImageItem(self.img1.atlasImg)
-        self.lut.sigLookupTableChanged.connect(self.histlutChanged)
-        self.lut.sigLevelsChanged.connect(self.histlutChanged)
+        self.lut.setImageItem(self.img1.atlas_img)
+        self.lut.sigLookupTableChanged.connect(self.histlut_changed)
+        self.lut.sigLevelsChanged.connect(self.histlut_changed)
 
-        self.displayCtrl = AtlasDisplayCtrl()
-        self.displayCtrl.params.sigTreeStateChanged.connect(self.display_ctrl_changed)
+        self.display_ctrl = AtlasDisplayCtrl()
+        self.display_ctrl.params.sigTreeStateChanged.connect(self.display_ctrl_changed)
 
-        self.labelTree = LabelTree()
-        self.labelTree.labelsChanged.connect(self.labels_changed)
+        self.label_tree = LabelTree()
+        self.label_tree.labels_changed.connect(self.labels_changed)
 
     def set_data(self, atlas_data):
         self.atlas_data = atlas_data
         self.display_atlas = None
         self.display_label = None
-        self.labelTree.set_ontology(atlas_data.ontology)
+        self.label_tree.set_ontology(atlas_data.ontology)
         self.update_image_data()
         self.labels_changed()
 
     def update_image_data(self):
         if self.atlas_data.image is None or self.atlas_data.label is None:
             return
-        axis = self.displayCtrl.params['Orientation']
+        axis = self.display_ctrl.params['Orientation']
         axes = {
             'right': ('right', 'anterior', 'dorsal'),
             'dorsal': ('dorsal', 'right', 'anterior'),
@@ -83,7 +83,7 @@ class AtlasSliceView(QtCore.QObject):
         order = [self.atlas_data.image._interpretAxis(ax) for ax in axes]
 
         # transpose, flip, downsample images
-        ds = self.displayCtrl.params['Downsample']
+        ds = self.display_ctrl.params['Downsample']
         self.display_atlas = self.atlas_data.image.view(np.ndarray).transpose(order)
         with pg.BusyCursor():
             for ax in (0, 1, 2):
@@ -104,18 +104,18 @@ class AtlasSliceView(QtCore.QObject):
 
     def labels_changed(self):
         # reapply label colors
-        lut = self.labelTree.lookupTable()
-        self.setLabelLUT(lut)        
+        lut = self.label_tree.lookup_table()
+        self.set_label_lut(lut)        
         
     def display_ctrl_changed(self, param, changes):
         update = False
         for param, change, value in changes:
             if param.name() == 'Composition':
-                self.setOverlay(value)
+                self.set_overlay(value)
             elif param.name() == 'Opacity':
-                self.setLabelOpacity(value)
+                self.set_label_opacity(value)
             elif param.name() == 'Interpolate':
-                self.setInterpolation(value)
+                self.set_interpolation(value)
             else:
                 update = True
         if update:
@@ -123,7 +123,7 @@ class AtlasSliceView(QtCore.QObject):
 
     def update_ortho_image(self):
         z = self.zslider.value()
-        self.img1.setData(self.display_atlas[z], self.display_label[z], scale=self.scale)
+        self.img1.set_data(self.display_atlas[z], self.display_label[z], scale=self.scale)
         self.sig_image_changed.emit()
 
     def update_slice_image(self):
@@ -133,19 +133,19 @@ class AtlasSliceView(QtCore.QObject):
             return
 
         if rotation == 0:
-            atlas = self.line_roi.getArrayRegion(self.display_atlas, self.img1.atlasImg, axes=(1, 2), order=int(self.interpolate))
-            label = self.line_roi.getArrayRegion(self.display_label, self.img1.atlasImg, axes=(1, 2), order=0)
+            atlas = self.line_roi.getArrayRegion(self.display_atlas, self.img1.atlas_img, axes=(1, 2), order=int(self.interpolate))
+            label = self.line_roi.getArrayRegion(self.display_label, self.img1.atlas_img, axes=(1, 2), order=0)
         else:
-            atlas = self.line_roi.getArrayRegion(self.display_atlas, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=int(self.interpolate))
-            label = self.line_roi.getArrayRegion(self.display_label, self.img1.atlasImg, rotation=rotation, axes=(1, 2, 0), order=0)
+            atlas = self.line_roi.getArrayRegion(self.display_atlas, self.img1.atlas_img, rotation=rotation, axes=(1, 2, 0), order=int(self.interpolate))
+            label = self.line_roi.getArrayRegion(self.display_label, self.img1.atlas_img, rotation=rotation, axes=(1, 2, 0), order=0)
 
         if atlas.size == 0:
             return
         
-        self.img2.setData(atlas, label, scale=self.scale)
+        self.img2.set_data(atlas, label, scale=self.scale)
         self.sig_slice_changed.emit()
         
-        scene = self.img2.atlasImg.scene()
+        scene = self.img2.atlas_img.scene()
         if scene is not None:
             w = scene.views()
             if len(w) > 0:
@@ -155,32 +155,32 @@ class AtlasSliceView(QtCore.QObject):
         
     def angle_slider_changed(self):
         rotation = self.angle_slider.value()
-        self.set_rotation_roi(self.img1.atlasImg, rotation)
+        self.set_rotation_roi(self.img1.atlas_img, rotation)
         self.update_slice_image()
 
     def close(self):
         self.data = None
 
-    def setOverlay(self, o):
-        self.img1.setOverlay(o)
-        self.img2.setOverlay(o)
+    def set_overlay(self, o):
+        self.img1.set_overlay(o)
+        self.img2.set_overlay(o)
 
-    def setLabelOpacity(self, o):
-        self.img1.setLabelOpacity(o)
-        self.img2.setLabelOpacity(o)
+    def set_label_opacity(self, o):
+        self.img1.set_label_opacity(o)
+        self.img2.set_label_opacity(o)
 
-    def setInterpolation(self, interp):
+    def set_interpolation(self, interp):
         assert isinstance(interp, bool)
         self.interpolate = interp
 
-    def setLabelLUT(self, lut):
-        self.img1.setLUT(lut)
-        self.img2.setLUT(lut)
+    def set_label_lut(self, lut):
+        self.img1.set_lut(lut)
+        self.img2.set_lut(lut)
 
-    def histlutChanged(self):
+    def histlut_changed(self):
         # note: img1 is updated automatically; only bneed to update img2 to match
-        self.img2.atlasImg.setLookupTable(self.lut.getLookupTable(n=256))
-        self.img2.atlasImg.setLevels(self.lut.getLevels())
+        self.img2.atlas_img.setLookupTable(self.lut.getLookupTable(n=256))
+        self.img2.atlas_img.setLevels(self.lut.getLevels())
 
     def set_rotation_roi(self, img, rotation):
 
@@ -250,7 +250,7 @@ class AtlasDisplayCtrl(pg.parametertree.ParameterTree):
 
 
 class LabelTree(QtGui.QWidget):
-    labelsChanged = QtCore.Signal()
+    labels_changed = QtCore.Signal()
 
     def __init__(self, parent=None):
         self._block_signals = False
@@ -266,37 +266,37 @@ class LabelTree(QtGui.QWidget):
         self.tree.headerItem().setText(0, "id")
         self.tree.headerItem().setText(1, "name")
         self.tree.headerItem().setText(2, "color")
-        self.labelsById = {}
-        self.labelsByAcronym = {}
+        self.labels_by_id = {}
+        self.labels_by_acronym = {}
         self.checked = set()
-        self.tree.itemChanged.connect(self.itemChange)
+        self.tree.itemChanged.connect(self.item_change)
 
-        self.layerBtn = QtGui.QPushButton('Color by cortical layer')
-        self.layout.addWidget(self.layerBtn, 1, 0)
-        self.layerBtn.clicked.connect(self.colorByLayer)
+        self.layer_btn = QtGui.QPushButton('Color by cortical layer')
+        self.layout.addWidget(self.layer_btn, 1, 0)
+        self.layer_btn.clicked.connect(self.color_by_layer)
 
-        self.resetBtn = QtGui.QPushButton('Reset colors')
-        self.layout.addWidget(self.resetBtn, 2, 0)
-        self.resetBtn.clicked.connect(self.resetColors)
+        self.reset_btn = QtGui.QPushButton('Reset colors')
+        self.layout.addWidget(self.reset_btn, 2, 0)
+        self.reset_btn.clicked.connect(self.reset_colors)
 
     def set_ontology(self, ontology):
         # prevent emission of multiple signals during update
         self._block_signals = True
         try:
             for rec in ontology:
-                self.addLabel(*rec)
+                self.add_label(*rec)
         finally:
             self._block_signals = False
         
-        self.labelsChanged.emit()
+        self.labels_changed.emit()
 
-    def addLabel(self, id, parent, name, acronym, color):
+    def add_label(self, id, parent, name, acronym, color):
         item = QtGui.QTreeWidgetItem([acronym, name, ''])
         item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
         item.setCheckState(0, QtCore.Qt.Unchecked)
 
-        if parent in self.labelsById:
-            root = self.labelsById[parent]['item']
+        if parent in self.labels_by_id:
+            root = self.labels_by_id[parent]['item']
         else:
             root = self.tree.invisibleRootItem()
 
@@ -304,23 +304,24 @@ class LabelTree(QtGui.QWidget):
 
         btn = pg.ColorButton(color=pg.mkColor(color))
         btn.defaultColor = color
+        btn.id = id
         self.tree.setItemWidget(item, 2, btn)
 
-        self.labelsById[id] = {'item': item, 'btn': btn}
+        self.labels_by_id[id] = {'item': item, 'btn': btn}
         item.id = id
-        self.labelsByAcronym[acronym] = self.labelsById[id]
+        self.labels_by_acronym[acronym] = self.labels_by_id[id]
 
-        btn.sigColorChanged.connect(self.itemColorChanged)
+        btn.sigColorChanged.connect(self.item_color_changed)
 
-    def itemChange(self, item, col):
+    def item_change(self, item, col):
         checked = item.checkState(0) == QtCore.Qt.Checked
-        with SignalBlock(self.tree.itemChanged, self.itemChange):
-            self.checkRecursive(item, checked)
+        with SignalBlock(self.tree.itemChanged, self.item_change):
+            self.check_recursive(item, checked)
             
         if not self._block_signals:
-            self.labelsChanged.emit()
+            self.labels_changed.emit()
 
-    def checkRecursive(self, item, checked):
+    def check_recursive(self, item, checked):
         if checked:
             self.checked.add(item.id)
             item.setCheckState(0, QtCore.Qt.Checked)
@@ -330,62 +331,60 @@ class LabelTree(QtGui.QWidget):
             item.setCheckState(0, QtCore.Qt.Unchecked)
 
         for i in range(item.childCount()):
-            self.checkRecursive(item.child(i), checked)
+            self.check_recursive(item.child(i), checked)
 
-    def itemColorChanged(self, *args):
-        self.labelsChanged.emit()
+    def item_color_changed(self, *args):
+        self.labels_changed.emit()
 
-    def lookupTable(self):
+    def lookup_table(self):
         lut = np.zeros((2**16, 4), dtype=np.ubyte)
         for id in self.checked:
             if id >= lut.shape[0]:
                 continue
-            lut[id] = self.labelsById[id]['btn'].color(mode='byte')
+            lut[id] = self.labels_by_id[id]['btn'].color(mode='byte')
         return lut
 
-    def colorByLayer(self, root=None):
+    def color_by_layer(self, root=None):
         try:
             unblock = False
             if not isinstance(root, pg.QtGui.QTreeWidgetItem):
                 self.blockSignals(True)
                 unblock = True
-                root = self.labelsByAcronym['Isocortex']['item']
+                root = self.labels_by_acronym['Isocortex']['item']
 
             name = str(root.text(1))
             if ', layer' in name.lower():
                 layer = name.split(' ')[-1]
                 layer = {'1': 0, '2': 1, '2/3': 2, '4': 3, '5': 4, '6a': 5, '6b': 6}[layer]
-                btn = self.labelsById[root.id]['btn']
+                btn = self.labels_by_id[root.id]['btn']
                 btn.setColor(pg.intColor(layer, 10))
-                #root.setCheckState(0, QtCore.Qt.Checked)
 
             for i in range(root.childCount()):
-                self.colorByLayer(root.child(i))
+                self.color_by_layer(root.child(i))
         finally:
             if unblock:
                 self.blockSignals(False)
-                self.labelsChanged.emit()
+                self.labels_changed.emit()
 
-    def resetColors(self):
+    def reset_colors(self):
         try:
             self.blockSignals(True)
-            for k,v in self.labelsById.items():
+            for k,v in self.labels_by_id.items():
                 v['btn'].setColor(pg.mkColor(v['btn'].defaultColor))
-                #v['item'].setCheckState(0, QtCore.Qt.Unchecked)
         finally:
             self.blockSignals(False)
-            self.labelsChanged.emit()
+            self.labels_changed.emit()
 
     def describe(self, id):
-        if id not in self.labelsById:
+        if id not in self.labels_by_id:
             return "Unknown label: %d" % id
         descr = []
-        item = self.labelsById[id]['item']
+        item = self.labels_by_id[id]['item']
         name = str(item.text(1))
-        while item is not self.labelsByAcronym['root']['item']:
+        while item is not self.labels_by_acronym['root']['item']:
             descr.insert(0, str(item.text(0)))
             item = item.parent()
-        return ' > '.join(descr) + "  :  " + name
+        return '[%d]' % id + ' > '.join(descr) + "  :  " + name
 
 
 class AtlasImageItem(QtGui.QGraphicsItemGroup):
@@ -399,58 +398,58 @@ class AtlasImageItem(QtGui.QGraphicsItemGroup):
         self.mouseClicked = self._sigprox.mouseClicked
 
         QtGui.QGraphicsItemGroup.__init__(self)
-        self.atlasImg = pg.ImageItem(levels=[0,1])
-        self.labelImg = pg.ImageItem()
-        self.atlasImg.setParentItem(self)
-        self.labelImg.setParentItem(self)
-        self.labelImg.setZValue(10)
-        self.labelImg.setOpacity(0.5)
-        self.setOverlay('Multiply')
+        self.atlas_img = pg.ImageItem(levels=[0,1])
+        self.label_img = pg.ImageItem()
+        self.atlas_img.setParentItem(self)
+        self.label_img.setParentItem(self)
+        self.label_img.setZValue(10)
+        self.label_img.setOpacity(0.5)
+        self.set_overlay('Multiply')
 
-        self.labelColors = {}
+        self.label_colors = {}
         self.setAcceptHoverEvents(True)
 
-    def setData(self, atlas, label, scale=None):
-        self.labelData = label
-        self.atlasData = atlas
+    def set_data(self, atlas, label, scale=None):
+        self.label_data = label
+        self.atlas_data = atlas
         if scale is not None:
             self.resetTransform()
             self.scale(*scale)
-        self.atlasImg.setImage(self.atlasData, autoLevels=False)
-        self.labelImg.setImage(self.labelData, autoLevels=False)  
+        self.atlas_img.setImage(self.atlas_data, autoLevels=False)
+        self.label_img.setImage(self.label_data, autoLevels=False)  
 
-    def setLUT(self, lut):
-        self.labelImg.setLookupTable(lut)
+    def set_lut(self, lut):
+        self.label_img.setLookupTable(lut)
 
-    def setOverlay(self, overlay):
+    def set_overlay(self, overlay):
         mode = getattr(QtGui.QPainter, 'CompositionMode_' + overlay)
-        self.labelImg.setCompositionMode(mode)
+        self.label_img.setCompositionMode(mode)
 
-    def setLabelOpacity(self, o):
-        self.labelImg.setOpacity(o)
+    def set_label_opacity(self, o):
+        self.label_img.setOpacity(o)
 
     def setLabelColors(self, colors):
-        self.labelColors = colors
+        self.label_colors = colors
 
     def hoverEvent(self, event):
         if event.isExit():
             return
 
         try:
-            id = self.labelData[int(event.pos().x()), int(event.pos().y())]
+            id = self.label_data[int(event.pos().x()), int(event.pos().y())]
         except IndexError, AttributeError:
             return
         self.mouseHovered.emit(id)
 
     def mouseClickEvent(self, event):
-        id = self.labelData[int(event.pos().x()), int(event.pos().y())]
+        id = self.label_data[int(event.pos().x()), int(event.pos().y())]
         self.mouseClicked.emit([event, id])
 
     def boundingRect(self):
-        return self.labelImg.boundingRect()
+        return self.label_img.boundingRect()
 
     def shape(self):
-        return self.labelImg.shape()
+        return self.label_img.shape()
 
 
 class RulerROI(pg.ROI):
