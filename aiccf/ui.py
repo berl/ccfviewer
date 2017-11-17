@@ -333,8 +333,21 @@ class LabelTree(QtGui.QWidget):
         for i in range(item.childCount()):
             self.check_recursive(item.child(i), checked)
 
-    def item_color_changed(self, *args):
-        self.labels_changed.emit()
+    def item_color_changed(self, btn):
+        color = btn.color()
+        self.set_label_color(btn.id, btn.color())
+        
+    def set_label_color(self, label_id, color, recursive=True, emit=True):
+        item = self.labels_by_id[label_id]['item']
+        btn = self.labels_by_id[label_id]['btn']
+        with SignalBlock(btn.sigColorChanged, self.item_color_changed):
+            btn.setColor(color)
+        if recursive:
+            for i in range(item.childCount()):
+                ch = item.child(i)
+                self.set_label_color(ch.id, color, recursive=recursive, emit=False)
+        if emit:
+            self.labels_changed.emit()
 
     def lookup_table(self):
         lut = np.zeros((2**16, 4), dtype=np.ubyte)
