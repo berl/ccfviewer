@@ -6,7 +6,6 @@ import pyqtgraph as pg
 import pyqtgraph.metaarray as metaarray
 from pyqtgraph.Qt import QtGui, QtCore
 
-from aiccf.data import CCFAtlasData
 from aiccf.ui import AtlasDisplayCtrl, LabelTree, AtlasSliceView
 from aiccf import points_to_aff
 
