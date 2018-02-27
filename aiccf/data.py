@@ -72,17 +72,20 @@ class CCFAtlasData(object):
             image_url = self.image_url.format(resolution=resolution)
             image_file = os.path.join(cache_path, image_url.split('/')[-1])
             image_cache = os.path.join(cache_path, "image.ma")
-            download(image_url, image_file)
+            if not os.path.exists(image_file):
+                download(image_url, image_file)
             dlg += 1
             
             label_url = self.label_url.format(resolution=resolution)
             label_file = os.path.join(cache_path, label_url.split('/')[-1])
             label_cache = os.path.join(cache_path, "label.ma")
-            download(label_url, label_file)
+            if not os.path.exists(label_file):
+                download(label_url, label_file)
             dlg += 1
             
             onto_file = os.path.join(cache_path, 'ontology.json')
-            download(self.ontology_url, onto_file)
+            if not os.path.exists(onto_file):
+                download(self.ontology_url, onto_file)
             
             self.load_image_data(image_file)
             dlg += 1
