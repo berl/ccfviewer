@@ -64,6 +64,13 @@ class AtlasViewer(QtGui.QWidget):
         self.view_layout.addWidget(self.atlas_view.angle_slider, 3, 0)
         self.view_layout.addWidget(self.atlas_view.lut, 0, 1, 3, 1)
 
+
+        self.addImagePB = QtGui.QPushButton("add image")
+        self.addImagePB.clicked.connect(self.add_image)
+        self.view_layout.addWidget(self.addImagePB,4,0)
+
+
+
         self.clipboard = QtGui.QApplication.clipboard()
         
         QtGui.QShortcut(QtGui.QKeySequence("Alt+Up"), self, self.slider_up)
@@ -95,6 +102,9 @@ class AtlasViewer(QtGui.QWidget):
         self.coordinateCtrl = CoordinatesCtrl(self)
         self.coordinateCtrl.coordinateSubmitted.connect(self.coordinateSubmitted)
         self.ctrl_layout.addWidget(self.coordinateCtrl)
+
+    def add_image(self):
+        print("add image")
 
     def set_data(self, atlas_data):
         self.atlas_view.set_data(atlas_data)
