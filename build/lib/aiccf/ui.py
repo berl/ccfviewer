@@ -416,7 +416,7 @@ class AtlasImageItem(QtGui.QGraphicsItemGroup):
         self.label_img.setParentItem(self)
         self.label_img.setZValue(10)
         self.label_img.setOpacity(0.5)
-        self.set_overlay('Plus')
+        self.set_overlay('Multiply')
 
         self.label_colors = {}
         self.setAcceptHoverEvents(True)

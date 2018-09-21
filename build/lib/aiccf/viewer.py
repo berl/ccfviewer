@@ -1,5 +1,5 @@
 from ast import literal_eval
-import json, imageio
+import json
 from collections import OrderedDict
 import numpy as np
 import pyqtgraph as pg
@@ -64,13 +64,6 @@ class AtlasViewer(QtGui.QWidget):
         self.view_layout.addWidget(self.atlas_view.angle_slider, 3, 0)
         self.view_layout.addWidget(self.atlas_view.lut, 0, 1, 3, 1)
 
-
-        self.addImagePB = QtGui.QPushButton("add image")
-        self.addImagePB.clicked.connect(self.add_image)
-        self.view_layout.addWidget(self.addImagePB,4,0)
-
-
-
         self.clipboard = QtGui.QApplication.clipboard()
         
         QtGui.QShortcut(QtGui.QKeySequence("Alt+Up"), self, self.slider_up)
@@ -102,20 +95,6 @@ class AtlasViewer(QtGui.QWidget):
         self.coordinateCtrl = CoordinatesCtrl(self)
         self.coordinateCtrl.coordinateSubmitted.connect(self.coordinateSubmitted)
         self.ctrl_layout.addWidget(self.coordinateCtrl)
-
-    def add_image(self):
-        print("add image")
-        filename = QtGui.QFileDialog.getOpenFileName()
-        print(filename)
-        im = np.flipud(imageio.imread(str(filename)).T)
-        self.new_image = pg.ImageItem(image=im)
-        self.new_image.setParentItem(self.atlas_view.img2)
-        self.new_image.setZValue(50)
-        self.new_image.setOpacity(0.5)
-        self.new_image.setCompositionMode(QtGui.QPainter.CompositionMode_Plus)
-        self.new_image.setLevels([10, 255])
-        self.new_image.setRect(self.atlas_view.img2.boundingRect())
-        self.new_image.setPxMode(True)
 
     def set_data(self, atlas_data):
         self.atlas_view.set_data(atlas_data)
